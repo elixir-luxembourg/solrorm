@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solrorm"
+version = "0.1.0"
+authors = [{ name = "Valentin Grouès", email = "valentin.groues@uni.lu" }]
+description = "A lightweight Solr ORM: entity mapping, typed fields, faceting and query building over pysolr."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+keywords = ["solr", "orm", "pysolr", "search"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "pysolr>=3.11,<4",
+    "requests>=2.32",
+    # NOTE: Flask/werkzeug are still used by solr_orm.py (Response, abort).
+    # These are tech debt to remove so the library is framework-neutral.
+    "Flask>=3.1,<4",
+    "werkzeug>=3.1,<4",
+]
+
+[dependency-groups]
+dev = ["ruff", "ty"]
+testing = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["solrorm*"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E203", "E501", "E721"]
