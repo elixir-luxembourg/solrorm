@@ -589,29 +589,57 @@ class SolrORM(object):
                 entity_class.query = SolrQuery(entity_class, self)
         pass
 
+    def missing_fields(self, entity_name: str) -> List[str]:
+        """
+        Solr fields required by an entity but absent from the schema.
+
+        Reports the state of the schema without prescribing a remedy: it is up
+        to the calling application to decide what to do (and to name whichever
+        of its own commands recreates the schema).
+
+        @param entity_name: name of the entity to check, e.g. dataset
+        @return: the names of the missing Solr fields, empty if the schema is
+            complete. Raises KeyError if entity_name is not a known entity.
+        """
+        entity_class = config["entities"][entity_name.lower()]
+        if entity_class.__name__.lower() != entity_name.lower() or not hasattr(
+            entity_class, "_solr_fields"
+        ):
+            logger.warning(
+                "Cannot check the schema of '%s': it is registered under a "
+                "different name or its fields were never collected.",
+                entity_name,
+            )
+            return []
+        missing = []
+        for field in entity_class._solr_fields.values():
+            solr_field_name = f"{entity_name.lower()}_{field.name}"
+            ret = requests.get(f"{self.indexer_schema.url}/fields/{solr_field_name}")
+            if not ret.ok:
+                missing.append(solr_field_name)
+        if missing:
+            logger.debug(
+                "Entity '%s': %d field(s) missing from the Solr schema: %s",
+                entity_name,
+                len(missing),
+                ", ".join(missing),
+            )
+        return missing
+
     def check_schema(self, entity_name: str) -> bool:
         """
         Check for missing fields for each entity
+
+        @param entity_name: name of the entity to check, e.g. dataset
+        @return: True if the schema holds every field the entity declares.
+            Prefer L{missing_fields} when the caller wants to report *which*
+            fields are missing.
         """
         try:
-            entity_class = config["entities"][entity_name.lower()]
-            if entity_class.__name__.lower() == entity_name.lower() and hasattr(
-                entity_class, "_solr_fields"
-            ):
-                fields = entity_class._solr_fields
-                for field in fields.values():
-                    ret = requests.get(
-                        f"{self.indexer_schema.url}/fields/{entity_name.lower()}_{field.name}"
-                    )
-                    if not ret.ok:
-                        logger.error(
-                            "The field %s is required.",
-                            field.name,
-                        )
-                        return False
-                return True
+            return not self.missing_fields(entity_name)
         except KeyError as e:
-            logger.error(e)
+            logger.error("Unknown entity %s", e)
+            return False
 
     def check_fields_existence(self) -> bool:
         """
@@ -631,12 +659,57 @@ class SolrORM(object):
             if get_field(field["name"]):
                 return True
 
-    def field_type_mismatch(self, entity_name: str) -> bool:
-        for field in config["entities"].get(entity_name)._solr_fields.values():
-            ret = requests.get(
-                f"{self.indexer_schema.url}/fields/{entity_name.lower()}_{field.name}"
+    def mismatched_fields(self, entity_name: str) -> List[Tuple[str, str, str]]:
+        """
+        Fields whose type in the solr schema differs from the entity's.
+
+        Like L{missing_fields}, this reports the state of the schema without
+        prescribing a remedy: the calling application decides what to do about
+        it. Fields absent from the schema are skipped -- use L{missing_fields}
+        to detect those.
+
+        @param entity_name: name of the entity to check, e.g. dataset
+        @return: one (solr_field_name, expected_type, actual_type) tuple per
+            mismatching field, empty if every field type matches.
+            Raises KeyError if entity_name is not a known entity.
+        """
+        entity_class = config["entities"][entity_name]
+        mismatches = []
+        for field in entity_class._solr_fields.values():
+            solr_field_name = f"{entity_name.lower()}_{field.name}"
+            ret = requests.get(f"{self.indexer_schema.url}/fields/{solr_field_name}")
+            if not ret.ok:
+                # not in the schema at all; missing_fields() reports on it
+                continue
+            actual_type = ret.json()["field"]["type"]
+            if actual_type != field.type:
+                mismatches.append((solr_field_name, field.type, actual_type))
+        if mismatches:
+            logger.debug(
+                "Entity '%s': %d field(s) with a type mismatch in the solr schema: %s",
+                entity_name,
+                len(mismatches),
+                ", ".join(
+                    f"{name} (expected {expected}, got {actual})"
+                    for name, expected, actual in mismatches
+                ),
             )
-            return ret.json()["field"]["type"] != field.type
+        return mismatches
+
+    def field_type_mismatch(self, entity_name: str) -> bool:
+        """
+        Check whether any field type differs between the schema and the entity
+
+        @param entity_name: name of the entity to check, e.g. dataset
+        @return: True if at least one field type differs. Prefer
+            L{mismatched_fields} when the caller wants to report *which* fields
+            mismatch.
+        """
+        try:
+            return bool(self.mismatched_fields(entity_name))
+        except KeyError as e:
+            logger.error("Unknown entity %s", e)
+            return False
 
     def create_fields(self):
         """
