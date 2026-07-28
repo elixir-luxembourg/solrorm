@@ -23,10 +23,32 @@ Module containing the SolrSchemaAdmin class
 import logging
 
 import requests
+from requests import HTTPError
 
 from . import config
 
 logger = logging.getLogger(__name__)
+
+
+def _solr_error(response) -> str:
+    """
+    Extract the reason solr rejected a schema request.
+
+    @param response: the requests response of a schema api call
+    @return: the messages solr reported, falling back to the raw body
+    """
+    try:
+        error = response.json().get("error", {})
+    except ValueError:
+        return response.text
+    messages = [
+        message
+        for detail in error.get("details", [])
+        for message in detail.get("errorMessages", [])
+    ]
+    return "; ".join(message.strip() for message in messages) or error.get(
+        "msg", response.text
+    )
 
 
 class SolrSchemaAdmin:
@@ -128,4 +150,11 @@ class SolrSchemaAdmin:
         """
         logger.debug("deleting field %s", field_name)
         ret = requests.post(self.url, json={"delete-field": {"name": field_name}})
-        ret.raise_for_status()
+        if not ret.ok:
+            # solr explains the refusal in the body (a copy field still
+            # referring to the field, for instance); raise_for_status alone
+            # would discard it and leave only an opaque 400.
+            raise HTTPError(
+                f"could not delete field {field_name}: {_solr_error(ret)}",
+                response=ret,
+            )

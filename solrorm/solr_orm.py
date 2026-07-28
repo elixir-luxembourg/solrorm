@@ -1020,43 +1020,52 @@ class SolrORM(object):
 
         return self.indexer.commit(softCommit=soft_commit)
 
+    def _delete_copy_fields_for_class(self, entity_name):
+        """
+        Delete every copy field directive targeting this entity's text fields.
+
+        The directives are read back from the live schema rather than derived
+        from the configuration: applications may add copy fields of their own
+        (from an extended list of query fields, for instance), and a directive
+        left behind makes its source field undeletable.
+
+        @param entity_name: lowercase name of the entity, e.g. dataset
+        """
+        headers = {"Content-type": "application/json", "Content-Type": "text/xml"}
+        params = {"commit": "true", "indent": "true"}
+        ret = requests.get(
+            f"{self.indexer_schema.url}/copyfields", params={"wt": "json"}
+        )
+        if not ret.ok:
+            logger.warning("could not list the copy fields of the schema: %s", ret.text)
+            return
+        directives = [
+            {"source": copy_field["source"], "dest": copy_field["dest"]}
+            for copy_field in ret.json().get("copyFields", [])
+            if copy_field["dest"].startswith(f"{entity_name}_")
+        ]
+        if not directives:
+            return
+        logger.debug(
+            "deleting %d copy field directive(s) of entity %s",
+            len(directives),
+            entity_name,
+        )
+        ret = requests.post(
+            self.indexer_schema.url,
+            headers=headers,
+            params=params,
+            data=json.dumps({"delete-copy-field": directives}),
+        )
+        if not ret.ok:
+            logger.warning("could not delete the copy fields: %s", ret.text)
+
     def _delete_fields_for_class(self, entity_class):
         fields = entity_class._solr_fields
         entity_name = entity_class.__name__.lower()
-        solr_query_fields = config.get("SOLR_QUERY_TEXT_FIELD", {}).get(entity_name)
-        if not solr_query_fields:
-            solr_query_fields = self.DEFAULT_QUERY_FIELDS
         headers = {"Content-type": "application/json", "Content-Type": "text/xml"}
         params = {"commit": "true", "indent": "true"}
-        for source in solr_query_fields:
-            if source != "id":
-                source = entity_name + "_" + source
-            logger.debug("deleting copy field for %s", source)
-            data_delete_copyfield = {
-                "delete-copy-field": [
-                    {
-                        "source": source,
-                        "dest": entity_name + "_text_",
-                    },
-                    {
-                        "source": source,
-                        "dest": entity_name + "_textfuzzy_",
-                    },
-                    {
-                        "source": source,
-                        "dest": entity_name + "_autocomplete_text_",
-                    },
-                ]
-            }
-            ret = requests.post(
-                self.indexer_schema.url,
-                headers=headers,
-                params=params,
-                data=json.dumps(data_delete_copyfield),
-            )
-
-            if not ret.ok:
-                logger.debug(ret.content)
+        self._delete_copy_fields_for_class(entity_name)
         data = {
             "delete-field": [
                 {"name": entity_name + "_text_"},
@@ -1075,7 +1084,9 @@ class SolrORM(object):
             try:
                 self.indexer_schema.delete_field(entity_name + "_" + field.name)
             except HTTPError as e:
-                logger.warning("error deleting field %s", field.name, exc_info=e)
+                # the message carries solr's own explanation; a full traceback
+                # per undeletable field would only bury it
+                logger.warning("%s", e)
 
     def solr_config_update(self):
         headers = {"Content-type": "application/json"}

@@ -147,9 +147,7 @@ class SolrEntity:
             field_value = getattr(self, field_name, None)
             if field_value and self.id:
                 # get linked entity     from solr
-                source_entity_class = config["entities"].get(
-                    source_entity_class_name
-                )
+                source_entity_class = config["entities"].get(source_entity_class_name)
                 source_entity = source_entity_class.query.get(field_value)
                 if source_entity:
                     entities = getattr(source_entity, reversed_field_name, []) or []

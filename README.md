@@ -42,9 +42,9 @@ app = Flask(__name__)
 app.config.update(
     SOLR_ENDPOINT="http://localhost:8983/solr",
     SOLR_COLLECTION="my_collection",
-    entities={...},          # {name: SolrEntity subclass}
+    entities={...},  # {name: SolrEntity subclass}
 )
-solrorm.configure(app.config)   # store a reference to the config mapping
+solrorm.configure(app.config)  # store a reference to the config mapping
 ```
 
 The ORM reads the values it needs (`SOLR_*`, the `entities` registry, ...)
@@ -94,8 +94,8 @@ Manage the schema and index documents:
 
 ```python
 solr_orm = app.config["_solr_orm"]
-solr_orm.create_fields()          # create the Solr fields for all entities
-solr_orm.update_fields()          # push field changes
+solr_orm.create_fields()  # create the Solr fields for all entities
+solr_orm.update_fields()  # push field changes
 Dataset(entity_id="ds-1").save(commit=True)
 ```
 
