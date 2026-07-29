@@ -127,7 +127,15 @@ class Widget(SolrEntity):
     gadget = SolrForeignKeyField("gadget", "gadget", multivalued=True)
 
 
-ENTITIES = {"widget": Widget, "gadget": Gadget}
+class Trinket(SolrEntity):
+    """An entity with no *indexed* field, so query field resolution has to fall
+    back on SolrORM.DEFAULT_QUERY_FIELDS."""
+
+    title = SolrField("title", indexed=False)
+    note = SolrField("note", indexed=False)
+
+
+ENTITIES = {"widget": Widget, "gadget": Gadget, "trinket": Trinket}
 
 
 @pytest.fixture

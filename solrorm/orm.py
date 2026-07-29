@@ -118,7 +118,7 @@ class SolrQuery(object):
                     key for key, value in solr_query_fields_all.items() if value.indexed
                 ]
                 if not solr_query_fields:
-                    solr_query_fields = self.DEFAULT_QUERY_FIELDS
+                    solr_query_fields = self.solr_orm.DEFAULT_QUERY_FIELDS
                 # Check if the second part (after "_") is in solr_query_fields
                 if len(second_part) >= 2 and second_part[0] in solr_query_fields:
                     return True
@@ -269,7 +269,9 @@ class SolrQuery(object):
                             self.entity_name, facet.field_name
                         )
                     ] = facet.range.other
-                    params["facet.range"].append(self.entity_name, facet.field_name)
+                    params["facet.range"].append(
+                        f"{self.entity_name}_{facet.field_name}"
+                    )
                     for value in facet.values:
                         fq.append(
                             "{}_{}:{}".format(self.entity_name, facet.field_name, value)

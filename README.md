@@ -131,6 +131,23 @@ for dataset in Dataset.query.all():
     ...
 ```
 
+Facet on individual values with `Facet`, or on intervals with `FacetRange`:
+
+```python
+from solrorm import Facet, FacetRange, Range
+
+results = Dataset.query.search(
+    query="",
+    facets=[
+        Facet("keywords", "Keywords"),
+        FacetRange("year", "Year", Range(2000, 2025, 5)),
+    ],
+)
+```
+
+The returned `results.facets` keys have the entity prefix stripped, so they match
+the field names given to the facet.
+
 ## Contents
 
 | Module | Purpose |
