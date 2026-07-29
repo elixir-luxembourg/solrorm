@@ -184,13 +184,13 @@ def test_a_range_facet_is_requested_with_its_bounds(solr_orm, indexer):
 
 
 def test_selected_range_facet_values_become_filter_queries(solr_orm, indexer):
-    """A selected bucket is a value, not syntax: it is quoted and escaped just
-    like a plain facet's. Hosts wanting a range filter pass ``fq`` themselves."""
+    """A selected bucket is an interval clause built from the bounds this class
+    handed the caller, so it reaches solr as syntax rather than as a literal."""
     facet = FacetRange("size", "Size", Range(0, 100, 25))
-    facet.set_values(["25"])
+    facet.set_values(["[25 TO 50]", "[75 TO *]"])
     Widget.query.search(query="", facets=[facet])
     _q, params = indexer.last_search
-    assert 'widget_size:"25"' in params["fq"]
+    assert params["fq"] == ["widget_size:[25 TO 50]", "widget_size:[75 TO *]"]
 
 
 def test_a_facet_value_carrying_query_syntax_is_neutralised(solr_orm, indexer):

@@ -32,7 +32,8 @@ First release.
 - `escape_solr_value(value)` — backslash-escapes the Lucene special set, applied
   internally to every caller value the library interpolates into query syntax.
   The `query` argument of `search()` and `delete()` is Solr syntax by contract
-  and stays raw.
+  and stays raw, as are the interval clauses a selected `FacetRange` filters on,
+  which are built from the bounds the library supplied.
 - `SolrResults` — the `pysolr.Results` subclass returned by `search()` and
   `search_holding_entities()`, declaring the `entities` and `has_more`
   attributes those methods attach.

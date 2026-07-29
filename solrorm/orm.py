@@ -311,6 +311,10 @@ class SolrQuery(Generic[E]):
             params["facet.field"] = []
             params["facet.range"] = []
             for facet in facets:
+                solr_field = (
+                    f"{escape_solr_value(self.entity_name)}"
+                    f"_{escape_solr_value(facet.field_name)}"
+                )
                 if isinstance(facet, FacetRange):
                     params[
                         f"f.{self.entity_name}_{facet.field_name}.facet.range.start"
@@ -327,16 +331,20 @@ class SolrQuery(Generic[E]):
                     params["facet.range"].append(
                         f"{self.entity_name}_{facet.field_name}"
                     )
+                    # a range facet is selected on an interval clause -- the
+                    # bounds this class handed the caller in the first place --
+                    # so it is solr syntax and must reach solr unquoted, or it
+                    # would match a document whose field is that literal string
+                    for value in facet.values:
+                        fq.append(f"{solr_field}:{value}")
                 else:
                     params["facet.field"].append(
                         f"{self.entity_name}_{facet.field_name}"
                     )
-                # the selected values are caller data, so they are escaped and
-                # quoted the same way for both facet kinds
-                for value in facet.values:
-                    fq.append(
-                        f'{escape_solr_value(self.entity_name)}_{escape_solr_value(facet.field_name)}:"{escape_solr_value(value)}"'
-                    )
+                    # a value facet is selected on caller data, so it is quoted
+                    # and escaped
+                    for value in facet.values:
+                        fq.append(f'{solr_field}:"{escape_solr_value(value)}"')
         try:
             results = cast(SolrResults, self.solr_orm.indexer.search(q, **params))
             entities = []
