@@ -17,19 +17,21 @@ import pytest
 from pysolr import SolrError as PysolrError
 
 import solrorm
-from solrorm.exceptions import SolrORMError, SolrQueryException
+from solrorm.exceptions import SolrEntityNotFound, SolrORMError, SolrQueryException
 
 from .conftest import Widget
 
 
 def test_every_error_is_catchable_as_one_base_class():
     assert issubclass(SolrQueryException, SolrORMError)
+    assert issubclass(SolrEntityNotFound, SolrORMError)
     assert issubclass(SolrORMError, Exception)
 
 
 def test_the_errors_are_exported_from_the_package_root():
     assert solrorm.SolrORMError is SolrORMError
     assert solrorm.SolrQueryException is SolrQueryException
+    assert solrorm.SolrEntityNotFound is SolrEntityNotFound
 
 
 def test_a_pysolr_failure_during_search_is_rewrapped(solr_orm, indexer, monkeypatch):
@@ -47,3 +49,10 @@ def test_our_error_does_not_share_pysolrs_name(solr_orm):
     """pysolr exports a SolrError of its own, so ours is named SolrORMError."""
     assert SolrORMError is not PysolrError
     assert not hasattr(solrorm, "SolrError")
+
+
+def test_a_missing_entity_is_the_hosts_to_signal(solr_orm, indexer):
+    """The library returns None; SolrEntityNotFound is there for the host."""
+    assert Widget.query.get("absent") is None
+    with pytest.raises(SolrEntityNotFound):
+        raise SolrEntityNotFound("absent")

@@ -155,6 +155,32 @@ results = Dataset.query.search(
 The returned `results.facets` keys have the entity prefix stripped, so they match
 the field names given to the facet.
 
+### Missing entities
+
+`get()` and `get_by_slug()` return `None` when nothing matches. solrorm is
+framework-neutral — it never aborts your request — so the web-framework
+response stays in the host:
+
+```python
+from flask import abort
+
+dataset = Dataset.query.get(dataset_id)
+if dataset is None:
+    abort(404)
+```
+
+If you prefer an exception at your own lookup boundary, raise the
+`SolrEntityNotFound` the package provides (a `SolrORMError` subclass); the
+library itself never raises it:
+
+```python
+from solrorm import SolrEntityNotFound
+
+dataset = Dataset.query.get(dataset_id)
+if dataset is None:
+    raise SolrEntityNotFound(dataset_id)
+```
+
 ### Escaping: what is a value and what is a query
 
 Ids, slugs and selected facet values are treated as **values**: they are
@@ -234,12 +260,6 @@ uv run ty check
 ```
 
 The test suite needs no reachable Solr: `tests/conftest.py` fakes the indexer.
-
-## Known tech debt
-
-- `orm.py` still imports `flask.Response` and `werkzeug.exceptions.abort`,
-  so `Flask`/`werkzeug` remain runtime dependencies. Removing these would make
-  the library fully framework-neutral.
 
 ## License
 

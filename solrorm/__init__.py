@@ -26,7 +26,7 @@ __version__ = "0.1.0"
 
 from .config import Settings
 from .entity import SolrEntity
-from .exceptions import SolrORMError, SolrQueryException
+from .exceptions import SolrEntityNotFound, SolrORMError, SolrQueryException
 from .facets import Facet, FacetRange, Range
 from .fields import (
     SolrBinaryField,
@@ -55,6 +55,7 @@ __all__ = [
     "SolrCaseInsensitiveStringField",
     "SolrDateTimeField",
     "SolrEntity",
+    "SolrEntityNotFound",
     "SolrField",
     "SolrFloatField",
     "SolrForeignKeyField",

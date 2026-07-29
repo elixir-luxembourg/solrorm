@@ -32,3 +32,14 @@ class SolrQueryException(SolrORMError):
     """Raised when a Solr query fails."""
 
     pass
+
+
+class SolrEntityNotFound(SolrORMError):
+    """Raised when a lookup finds no entity.
+
+    The library itself never raises this: `SolrQuery.get` and
+    `SolrQuery.get_by_slug` return `None`. It is provided for hosts that
+    prefer an exception at their own lookup boundary.
+    """
+
+    pass

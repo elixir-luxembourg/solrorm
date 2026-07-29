@@ -30,15 +30,13 @@ import logging
 import re
 
 from datetime import date, datetime, timezone
-from typing import Type, Dict, List, Tuple, Optional, Union, Iterable
+from typing import Type, Dict, List, Tuple, Optional, Iterable
 
 import pysolr
 import requests
-from flask import Response
 from pysolr import Solr
 from pysolr import SolrError as PysolrError
 from requests import HTTPError
-from werkzeug.exceptions import abort
 
 from .facets import Facet, FacetRange
 from .entity import SolrEntity, _parse_solr_datetime
@@ -419,17 +417,6 @@ class SolrQuery(object):
         new_instance = self._build_instance(doc)
         return new_instance
 
-    def get_by_slug_or_404(self, slug: str) -> Union[SolrEntity, Response]:
-        """
-        Similar as get_by_slug method but returns a 404 page if entity not found
-        @param slug: slug of the entity to retrieve from solr
-        @return: a self.class_object instance or a 404 response if not found
-        """
-        new_instance = self.get_by_slug(slug)
-        if new_instance is None:
-            abort(404)
-        return new_instance
-
     def _build_instance(self, doc):
         new_instance = self.class_object()
         for attribute_name, field in self.class_object._solr_fields.items():
@@ -452,17 +439,6 @@ class SolrQuery(object):
             start_index = len(self.entity_name) + 1
             doc_id = doc_id[start_index:]
         setattr(new_instance, "id", doc_id)
-        return new_instance
-
-    def get_or_404(self, entity_id: str) -> Union[SolrEntity, Response]:
-        """
-        Similar as get method but returns a 404 page if entity not found
-        @param entity_id: id of the entity to retrieve from solr
-        @return: a self.class_object instance or a 404 response if not found
-        """
-        new_instance = self.get(entity_id)
-        if new_instance is None:
-            abort(404)
         return new_instance
 
     def count(self) -> int:

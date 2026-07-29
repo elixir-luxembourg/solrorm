@@ -21,10 +21,6 @@ classifiers = [
 dependencies = [
     "pysolr>=3.11,<4",
     "requests>=2.32",
-    # NOTE: Flask/werkzeug are still used by solr_orm.py (Response, abort).
-    # These are tech debt to remove so the library is framework-neutral.
-    "Flask>=3.1,<4",
-    "werkzeug>=3.1,<4",
 ]
 
 [dependency-groups]

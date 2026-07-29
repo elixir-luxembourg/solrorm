@@ -32,6 +32,7 @@ PUBLIC_NAMES = [
     "SolrCaseInsensitiveStringField",
     "SolrDateTimeField",
     "SolrEntity",
+    "SolrEntityNotFound",
     "SolrField",
     "SolrFloatField",
     "SolrForeignKeyField",
