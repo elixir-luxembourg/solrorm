@@ -104,6 +104,11 @@ holds it — that is all the removed `SOLR_QUERY_SEARCH_EXTENDED` /
 `SOLR_QUERY_SEARCH_EXTENDED_2_WAY_INDEX` flags ever did, minus their hardcoded
 `dataset`/`project`/`study` entity names.
 
+Adding a field to the table is picked up by the next `create_fields()` run,
+which adds the missing copy field directives and leaves the existing ones alone.
+Removing one is not: Solr keeps copying the field until the directive is dropped,
+which `delete_fields()` does for the whole entity.
+
 ## Usage
 
 Declare entities as `SolrEntity` subclasses with typed field descriptors:
@@ -156,8 +161,40 @@ Manage the schema and index documents:
 ```python
 solr_orm.create_fields()  # create the Solr fields for all entities
 solr_orm.update_fields()  # push field changes
+solr_orm.delete_fields()  # drop them again
 Dataset(entity_id="ds-1").save(commit=True)
 ```
+
+### Managing the schema
+
+`create_fields()` is **idempotent**: it asks Solr what the schema already holds
+and adds only what is missing — the entity fields, the `type` discriminator, the
+collection-global `autocomplete_text` field type, the three catch-all fields per
+entity and their copy field directives. Running it against a populated
+collection therefore changes nothing and never forces a reindex. Repairing a
+schema is the same call: whatever was deleted comes back, the rest is left
+alone.
+
+`update_fields()` replaces the definition of each entity's own fields — use it
+after changing a field's type or flags. Solr rewrites the field, so the affected
+documents need reindexing. The catch-all fields and copy fields are treated as
+in `create_fields()`: added when absent, never replaced.
+
+Neither call aborts on a refusal. If Solr rejects one field — an unknown field
+type, a change it will not make in place — the reason is logged at `WARNING` on
+the `solrorm.schema` and `solrorm.orm` loggers and the remaining fields are
+still written. Configure logging if you run either of these, or the refusals go
+unseen:
+
+```python
+import logging
+
+logging.getLogger("solrorm").setLevel(logging.INFO)
+```
+
+Both calls, and `delete_fields()`, iterate `settings.entities` — the registry is
+the contract, so an entity class that is imported but not registered is left out
+of the schema entirely.
 
 Query, facet and fetch:
 

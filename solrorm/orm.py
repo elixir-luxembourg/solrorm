@@ -548,6 +548,29 @@ class SolrORM(object):
     # default field to use for default search
     DEFAULT_QUERY_FIELDS = ["title"]
 
+    # The three per-entity catch-all fields every entity gets, as
+    # (suffix, field type, stored). The query fields of the entity are copied
+    # into each of them at index time.
+    CATCH_ALL_FIELDS = (
+        ("_text_", "text_en", False),
+        ("_textfuzzy_", "text_en_splitting_tight", False),
+        ("_autocomplete_text_", "autocomplete_text", True),
+    )
+
+    # Collection-global field type backing the _autocomplete_text_ fields: a
+    # whole-value tokenizer, so that a prefix query matches from the start of the
+    # field rather than from the start of any of its words.
+    AUTOCOMPLETE_FIELD_TYPE_NAME = "autocomplete_text"
+    AUTOCOMPLETE_FIELD_TYPE = {
+        "name": AUTOCOMPLETE_FIELD_TYPE_NAME,
+        "class": "solr.TextField",
+        "positionIncrementGap": "100",
+        "analyzer": {
+            "tokenizer": {"class": "solr.KeywordTokenizerFactory"},
+            "filters": [{"class": "solr.LowerCaseFilterFactory"}],
+        },
+    }
+
     def __init__(self, settings: Settings) -> None:
         """
         Initialize a SolrORM instance from a Settings object.
@@ -600,7 +623,6 @@ class SolrORM(object):
                 entity_class.query = entity_class.query_class(entity_class, self)
             else:
                 entity_class.query = SolrQuery(entity_class, self)
-        pass
 
     def missing_fields(self, entity_name: str) -> List[str]:
         """
@@ -627,8 +649,7 @@ class SolrORM(object):
         missing = []
         for field in entity_class._solr_fields.values():
             solr_field_name = f"{entity_name.lower()}_{field.name}"
-            ret = requests.get(f"{self.indexer_schema.url}/fields/{solr_field_name}")
-            if not ret.ok:
+            if not self.indexer_schema.field_exists(solr_field_name):
                 missing.append(solr_field_name)
         if missing:
             logger.debug(
@@ -667,9 +688,8 @@ class SolrORM(object):
                 if field_name.startswith(entity_name):
                     return field_name
 
-        ret = requests.get(self.indexer_schema.url + "/fields")
-        for field in ret.json()["fields"]:
-            if get_field(field["name"]):
+        for field_name in self.indexer_schema.fields():
+            if get_field(field_name):
                 return True
 
     def mismatched_fields(self, entity_name: str) -> List[Tuple[str, str, str]]:
@@ -690,11 +710,10 @@ class SolrORM(object):
         mismatches = []
         for field in entity_class._solr_fields.values():
             solr_field_name = f"{entity_name.lower()}_{field.name}"
-            ret = requests.get(f"{self.indexer_schema.url}/fields/{solr_field_name}")
-            if not ret.ok:
+            actual_type = self.indexer_schema.field_type(solr_field_name)
+            if actual_type is None:
                 # not in the schema at all; missing_fields() reports on it
                 continue
-            actual_type = ret.json()["field"]["type"]
             if actual_type != field.type:
                 mismatches.append((solr_field_name, field.type, actual_type))
         if mismatches:
@@ -726,53 +745,73 @@ class SolrORM(object):
 
     def create_fields(self):
         """
-        We loop over solr entity subclasses to create the corresponding fields
+        Create the solr fields of every registered entity.
+
+        Idempotent: a field, field type or copy field directive that is already
+        in the schema is left as it is, so running this against a populated
+        collection neither drops the catch-all fields nor forces a reindex.
+        Whatever solr refuses is logged and the remaining fields are still
+        attempted.
         """
         logger.info("Creating solr fields")
         self._create_or_update_fields(update=False)
 
     def update_fields(self):
         """
-        We loop over solr entity subclasses to update the corresponding fields
+        Replace the definition of the solr fields of every registered entity.
+
+        The catch-all fields and copy field directives are treated as in
+        L{create_fields}: added when absent, left alone otherwise.
         """
         logger.info("Updating solr fields")
         self._create_or_update_fields(update=True)
 
     def delete_fields(self):
         """
-        We loop over solr entity subclasses to delete the corresponding fields
+        Delete the solr fields of every registered entity.
         """
-        # get subclasses
         logger.info("Deleting solr fields")
-        for solr_entity_class in SolrEntity.__subclasses__():
-            # fields = self.get_fields_for_class(solr_entity_class)
-            if not hasattr(solr_entity_class, "_solr_fields"):
-                solr_entity_class._solr_fields = self.get_fields_for_class(
-                    solr_entity_class
-                )
+        for solr_entity_class in self.settings.entities.values():
+            self._collect_fields(solr_entity_class)
             self._delete_fields_for_class(solr_entity_class)
         try:
             self.indexer_schema.delete_field("type")
         except HTTPError as e:
             logger.debug(e)
 
-    def _create_or_update_fields(self, update=False):
-        # get subclasses
-        if not update:
-            self.indexer_schema.create_field(
-                "type", "string", index=True, store=True, multivalued=False
+    def _collect_fields(self, solr_entity_class: Type[SolrEntity]) -> None:
+        """
+        Make sure an entity class carries its collected solr fields.
+
+        @param solr_entity_class: SolrEntity subclass
+        """
+        if not hasattr(solr_entity_class, "_solr_fields"):
+            solr_entity_class._solr_fields = self.get_fields_for_class(
+                solr_entity_class
             )
+
+    def _create_or_update_fields(self, update=False):
+        if not self.indexer_schema.field_exists("type"):
+            try:
+                self.indexer_schema.create_field(
+                    "type", "string", index=True, store=True, multivalued=False
+                )
+            except HTTPError as e:
+                logger.warning("could not create the type field: %s", e)
+        # the field type backing every entity's autocomplete field is
+        # collection-global, so it is created once and not per entity
+        if not self.indexer_schema.field_type_exists(self.AUTOCOMPLETE_FIELD_TYPE_NAME):
+            self.indexer_schema.create_field_type(self.AUTOCOMPLETE_FIELD_TYPE)
+        existing_copy_fields = {
+            (directive["source"], directive["dest"])
+            for directive in self.indexer_schema.copy_fields()
+        }
         for solr_entity_class in self.settings.entities.values():
             logger.debug(solr_entity_class)
-            # fields = self.get_fields_for_class(solr_entity_class)
-            if not hasattr(solr_entity_class, "_solr_fields"):
-                solr_entity_class._solr_fields = self.get_fields_for_class(
-                    solr_entity_class
-                )
-            self._create_or_update_fields_for_class(solr_entity_class, update)
-        # self.indexer_schema.update_field("_text_", "text_en", index=True, store=False, multivalued=True)
-        # self.indexer_schema.update_field("_textfuzzy_", "text_en_splitting_tight", index=True, store=False,
-        #                                 multivalued=True)
+            self._collect_fields(solr_entity_class)
+            self._create_or_update_fields_for_class(
+                solr_entity_class, update, existing_copy_fields
+            )
         logger.debug("done")
 
     def get_fields_for_class(
@@ -796,212 +835,92 @@ class SolrORM(object):
             if superclass != object:
                 self._find_fields(superclass, attributes)
 
-    def _create_or_update_fields_for_class(self, solr_entity_class, update):
+    def query_fields_for_entity(self, entity_name: str) -> List[str]:
+        """
+        The solr fields copied into an entity's catch-all search fields.
+
+        @param entity_name: lowercase name of the entity, e.g. dataset
+        @return: the field names the host listed for this entity in
+            C{Settings.query_text_field}, or L{DEFAULT_QUERY_FIELDS} if it
+            listed none
+        """
+        return self.settings.query_text_field.get(entity_name) or list(
+            self.DEFAULT_QUERY_FIELDS
+        )
+
+    def _create_or_update_fields_for_class(
+        self, solr_entity_class, update, existing_copy_fields=None
+    ):
+        """
+        Create or update the solr fields of one entity.
+
+        Adding is idempotent: the catch-all fields and their copy field
+        directives are created only when the schema does not already hold them,
+        so indexed content is never discarded. Solr's refusals are logged and
+        the remaining fields are still attempted.
+
+        @param solr_entity_class: the SolrEntity subclass to build the schema of
+        @param update: replace the definition of the entity's own fields rather
+            than adding them
+        @param existing_copy_fields: the C{(source, dest)} pairs already in the
+            schema, so that a run over several entities lists them once. Read
+            from solr when not given.
+        """
         fields = solr_entity_class._solr_fields
         entity_name = solr_entity_class.__name__.lower()
-        solr_query_fields = self.settings.query_text_field.get(entity_name)
-        if not solr_query_fields:
-            solr_query_fields = self.DEFAULT_QUERY_FIELDS
+        if existing_copy_fields is None:
+            existing_copy_fields = {
+                (directive["source"], directive["dest"])
+                for directive in self.indexer_schema.copy_fields()
+            }
+        # "id" is the one source shared by every entity, so it is not prefixed
+        sources = [
+            source if source == "id" else f"{entity_name}_{source}"
+            for source in self.query_fields_for_entity(entity_name)
+        ]
 
         for field in fields.values():
-            if update:
-                self.indexer_schema.update_field(
-                    entity_name + "_" + field.name,
-                    field.type,
-                    field.indexed,
-                    field.stored,
-                    field.multivalued,
-                )
-            else:
-                self.indexer_schema.create_field(
-                    entity_name + "_" + field.name,
-                    field.type,
-                    field.indexed,
-                    field.stored,
-                    field.multivalued,
-                )
-        try:
-            headers = {"Content-type": "application/json", "Content-Type": "text/xml"}
-            params = {"commit": "true", "indent": "true"}
-
-            data = {"delete-field": {"name": entity_name + "_text_"}}
-            requests.post(
-                self.indexer_schema.url,
-                headers=headers,
-                data=json.dumps(data),
-                params=params,
-            )
-            data = {"delete-field": {"name": entity_name + "_textfuzzy_"}}
-
-            requests.post(
-                self.indexer_schema.url,
-                headers=headers,
-                data=json.dumps(data),
-                params=params,
-            )
-
-            # Adding the Text field if it does not exists
-
-            data_add_copyfield = {
-                "add-field": {
-                    "name": entity_name + "_text_",
-                    "type": "text_en",
-                    "indexed": "true",
-                    "multiValued": "true",
-                    "stored": "false",
-                }
-            }
-            response_add_copyfield = requests.post(
-                self.indexer_schema.url,
-                headers=headers,
-                data=json.dumps(data_add_copyfield),
-                params=params,
-            )
-            data_add_copyfield2 = {
-                "add-field": {
-                    "name": entity_name + "_textfuzzy_",
-                    "type": "text_en_splitting_tight",
-                    "indexed": "true",
-                    "multiValued": "true",
-                    "stored": "false",
-                }
-            }
-            response_add_copyfield2 = requests.post(
-                self.indexer_schema.url,
-                headers=headers,
-                data=json.dumps(data_add_copyfield2),
-                params=params,
-            )
-
-            data_add_fieldtype = {
-                "add-field-type": {
-                    "name": "autocomplete_text",
-                    "class": "solr.TextField",
-                    "positionIncrementGap": "100",
-                    "analyzer": {
-                        "tokenizer": {"class": "solr.KeywordTokenizerFactory"},
-                        "filters": [{"class": "solr.LowerCaseFilterFactory"}],
-                    },
-                }
-            }
-            requests.post(
-                self.indexer_schema.url,
-                headers=headers,
-                data=json.dumps(data_add_fieldtype),
-                params=params,
-            )
-            data_add_copyfield3 = {
-                "add-field": {
-                    "name": entity_name + "_autocomplete_text_",
-                    "type": "autocomplete_text",
-                    "indexed": "true",
-                    "stored": "true",
-                    "multiValued": "true",
-                }
-            }
-            response_add_copyfield3 = requests.post(
-                self.indexer_schema.url,
-                headers=headers,
-                data=json.dumps(data_add_copyfield3),
-                params=params,
-            )
-
-            # if the text field exists but have copy fields attached. Deleting all the copy fields
-            if not response_add_copyfield.status_code == 200:
-                for source in solr_query_fields:
-                    if source != "id":
-                        source = entity_name + "_" + source
-                    data_delete_copyfield = {
-                        "delete-copy-field": {
-                            "source": source,
-                            "dest": entity_name + "_text_",
-                        }
-                    }
-                    requests.post(
-                        self.indexer_schema.url,
-                        headers=headers,
-                        params=params,
-                        data=json.dumps(data_delete_copyfield),
+            solr_field_name = f"{entity_name}_{field.name}"
+            try:
+                if update:
+                    self.indexer_schema.update_field(
+                        solr_field_name,
+                        field.type,
+                        field.indexed,
+                        field.stored,
+                        field.multivalued,
                     )
-
-            if not response_add_copyfield2.status_code == 200:
-                for source in solr_query_fields:
-                    if source != "id":
-                        source = entity_name + "_" + source
-                    data_delete_copyfield2 = {
-                        "delete-copy-field": {
-                            "source": source,
-                            "dest": entity_name + "_textfuzzy_",
-                        }
-                    }
-                    requests.post(
-                        self.indexer_schema.url,
-                        headers=headers,
-                        params=params,
-                        data=json.dumps(data_delete_copyfield2),
+                elif not self.indexer_schema.field_exists(solr_field_name):
+                    self.indexer_schema.create_field(
+                        solr_field_name,
+                        field.type,
+                        field.indexed,
+                        field.stored,
+                        field.multivalued,
                     )
+            except HTTPError as e:
+                # one field solr will not have is no reason to abandon the rest
+                logger.warning("could not write field %s: %s", solr_field_name, e)
 
-            if not response_add_copyfield3.status_code == 200:
-                for source in solr_query_fields:
-                    if source != "id":
-                        source = entity_name + "_" + source
-                    data_delete_copyfield3 = {
-                        "delete-copy-field": {
-                            "source": source,
-                            "dest": entity_name + "_autocomplete_text_",
-                        }
-                    }
-                    requests.post(
-                        self.indexer_schema.url,
-                        headers=headers,
-                        params=params,
-                        data=json.dumps(data_delete_copyfield3),
+        for suffix, field_type, stored in self.CATCH_ALL_FIELDS:
+            catch_all_name = f"{entity_name}{suffix}"
+            if not self.indexer_schema.field_exists(catch_all_name):
+                try:
+                    self.indexer_schema.create_field(
+                        catch_all_name,
+                        field_type,
+                        index=True,
+                        store=stored,
+                        multivalued=True,
                     )
-
-            # recreating all the copy fields with _text_ and _textfuzzy_ as dest field
-            for source in solr_query_fields:
-                if source != "id":
-                    source = entity_name + "_" + source
-                data_create_copyfield = {
-                    "add-copy-field": {
-                        "source": source,
-                        "dest": entity_name + "_text_",
-                    }
-                }
-                requests.post(
-                    self.indexer_schema.url,
-                    headers=headers,
-                    params=params,
-                    data=json.dumps(data_create_copyfield),
-                )
-                data_create_copyfield2 = {
-                    "add-copy-field": {
-                        "source": source,
-                        "dest": entity_name + "_textfuzzy_",
-                    }
-                }
-                requests.post(
-                    self.indexer_schema.url,
-                    headers=headers,
-                    params=params,
-                    data=json.dumps(data_create_copyfield2),
-                )
-
-                data_create_copyfield3 = {
-                    "add-copy-field": {
-                        "source": source,
-                        "dest": entity_name + "_autocomplete_text_",
-                    }
-                }
-                requests.post(
-                    self.indexer_schema.url,
-                    headers=headers,
-                    params=params,
-                    data=json.dumps(data_create_copyfield3),
-                )
-
-        except requests.exceptions.HTTPError as e:
-            print(e)
+                except HTTPError as e:
+                    logger.warning("could not create field %s: %s", catch_all_name, e)
+                    continue
+            for source in sources:
+                if (source, catch_all_name) in existing_copy_fields:
+                    continue
+                if self.indexer_schema.add_copy_field(source, catch_all_name):
+                    existing_copy_fields.add((source, catch_all_name))
 
     def add(self, entity_dict: dict) -> str:
         """
@@ -1044,53 +963,22 @@ class SolrORM(object):
 
         @param entity_name: lowercase name of the entity, e.g. dataset
         """
-        headers = {"Content-type": "application/json", "Content-Type": "text/xml"}
-        params = {"commit": "true", "indent": "true"}
-        ret = requests.get(
-            f"{self.indexer_schema.url}/copyfields", params={"wt": "json"}
-        )
-        if not ret.ok:
-            logger.warning("could not list the copy fields of the schema: %s", ret.text)
-            return
         directives = [
-            {"source": copy_field["source"], "dest": copy_field["dest"]}
-            for copy_field in ret.json().get("copyFields", [])
-            if copy_field["dest"].startswith(f"{entity_name}_")
+            directive
+            for directive in self.indexer_schema.copy_fields()
+            if directive["dest"].startswith(f"{entity_name}_")
         ]
-        if not directives:
-            return
-        logger.debug(
-            "deleting %d copy field directive(s) of entity %s",
-            len(directives),
-            entity_name,
-        )
-        ret = requests.post(
-            self.indexer_schema.url,
-            headers=headers,
-            params=params,
-            data=json.dumps({"delete-copy-field": directives}),
-        )
-        if not ret.ok:
-            logger.warning("could not delete the copy fields: %s", ret.text)
+        self.indexer_schema.delete_copy_fields(directives)
 
     def _delete_fields_for_class(self, entity_class):
         fields = entity_class._solr_fields
         entity_name = entity_class.__name__.lower()
-        headers = {"Content-type": "application/json", "Content-Type": "text/xml"}
-        params = {"commit": "true", "indent": "true"}
         self._delete_copy_fields_for_class(entity_name)
-        data = {
-            "delete-field": [
-                {"name": entity_name + "_text_"},
-                {"name": entity_name + "_textfuzzy_"},
-                {"name": entity_name + "_autocomplete_text_"},
+        self.indexer_schema.delete_fields(
+            [
+                f"{entity_name}{suffix}"
+                for suffix, _type, _stored in self.CATCH_ALL_FIELDS
             ]
-        }
-        requests.post(
-            self.indexer_schema.url,
-            headers=headers,
-            data=json.dumps(data),
-            params=params,
         )
 
         for field in fields.values():

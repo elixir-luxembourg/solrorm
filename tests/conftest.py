@@ -24,6 +24,7 @@ from collections import deque
 
 import pysolr
 import pytest
+import requests
 
 from solrorm.config import Settings
 from solrorm.orm import SolrORM
@@ -109,6 +110,158 @@ class FakeIndexer:
         return "{}"
 
 
+class FakeSchemaResponse:
+    """The parts of a requests.Response the schema admin touches."""
+
+    def __init__(self, status_code=200, payload=None, text=""):
+        self.status_code = status_code
+        self.ok = status_code < 400
+        self.text = text
+        self._payload = payload
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("no json body")
+        return self._payload
+
+    def raise_for_status(self):
+        if not self.ok:
+            raise requests.HTTPError(str(self.status_code), response=self)
+
+
+class FakeSchemaApi:
+    """
+    Stand-in for the solr schema api, backed by an in-memory schema.
+
+    It answers the reads L{solrorm.schema.SolrSchemaAdmin} issues and applies the
+    directives it posts, so a test can describe a schema that is empty, already
+    complete, or partly there, and then assert on what solrorm did about it.
+    Every posted directive is recorded in C{directives}.
+    """
+
+    def __init__(self, fields=None, field_types=(), copy_fields=()):
+        # field name -> field type
+        self.fields = dict(fields or {})
+        self.field_types = set(field_types)
+        self.copy_fields = [dict(directive) for directive in copy_fields]
+        self.directives = []
+        # field names solr should refuse to add, mapped to the reason it gives
+        self.refuse = {}
+
+    def install(self, monkeypatch):
+        """Route requests' get and post through this fake."""
+        monkeypatch.setattr(requests, "get", self.get)
+        monkeypatch.setattr(requests, "post", self.post)
+        return self
+
+    def get(self, url, params=None, **kwargs):
+        path = url.split("/schema", 1)[1]
+        if path == "/copyfields":
+            return FakeSchemaResponse(payload={"copyFields": self.copy_fields})
+        if path == "/fields":
+            return FakeSchemaResponse(
+                payload={
+                    "fields": [
+                        {"name": name, "type": type_}
+                        for name, type_ in self.fields.items()
+                    ]
+                }
+            )
+        for prefix, known in (
+            ("/fields/", self.fields),
+            ("/fieldtypes/", self.field_types),
+        ):
+            if path.startswith(prefix):
+                name = path[len(prefix) :]
+                if name not in known:
+                    return FakeSchemaResponse(404, text=f"{name} not found")
+                if prefix == "/fields/":
+                    return FakeSchemaResponse(
+                        payload={"field": {"name": name, "type": self.fields[name]}}
+                    )
+                return FakeSchemaResponse(payload={"fieldType": {"name": name}})
+        raise AssertionError(f"unexpected schema read: {url}")
+
+    def post(self, url, json=None, **kwargs):
+        assert json is not None, "the schema api is driven with a json body"
+        self.directives.append(json)
+        for directive, body in json.items():
+            handler = getattr(self, f"_{directive.replace('-', '_')}")
+            error = handler(body)
+            if error:
+                return FakeSchemaResponse(
+                    400, payload={"error": {"msg": error}}, text=error
+                )
+        return FakeSchemaResponse()
+
+    def _add_field(self, body):
+        name = body["name"]
+        if name in self.refuse:
+            return self.refuse[name]
+        if name in self.fields:
+            return f"field '{name}' already exists"
+        self.fields[name] = body["type"]
+        return None
+
+    def _replace_field(self, body):
+        if body["name"] not in self.fields:
+            return f"field '{body['name']}' not found"
+        self.fields[body["name"]] = body["type"]
+        return None
+
+    def _delete_field(self, body):
+        for entry in body if isinstance(body, list) else [body]:
+            self.fields.pop(entry["name"], None)
+        return None
+
+    def _add_field_type(self, body):
+        self.field_types.add(body["name"])
+        return None
+
+    def _add_copy_field(self, body):
+        directive = {"source": body["source"], "dest": body["dest"]}
+        if directive in self.copy_fields:
+            return "copyField source/dest already exists"
+        self.copy_fields.append(directive)
+        return None
+
+    def _delete_copy_field(self, body):
+        for entry in body if isinstance(body, list) else [body]:
+            directive = {"source": entry["source"], "dest": entry["dest"]}
+            if directive in self.copy_fields:
+                self.copy_fields.remove(directive)
+        return None
+
+    def added_fields(self):
+        """The names of the fields that were added, in order."""
+        return [
+            directive["add-field"]["name"]
+            for directive in self.directives
+            if "add-field" in directive
+        ]
+
+    def deleted_fields(self):
+        """The names of the fields whose deletion was requested, in order."""
+        names = []
+        for directive in self.directives:
+            body = directive.get("delete-field")
+            if body is None:
+                continue
+            names.extend(
+                entry["name"] for entry in (body if isinstance(body, list) else [body])
+            )
+        return names
+
+    def copy_field_sources(self, dest):
+        """The sources copy fields were added for C{dest}, in order."""
+        return [
+            directive["add-copy-field"]["source"]
+            for directive in self.directives
+            if "add-copy-field" in directive
+            and directive["add-copy-field"]["dest"] == dest
+        ]
+
+
 class Gadget(SolrEntity):
     """Target of Widget's foreign key."""
 
@@ -174,6 +327,12 @@ def settings(app_config):
 @pytest.fixture
 def indexer():
     return FakeIndexer()
+
+
+@pytest.fixture
+def fake_schema(monkeypatch):
+    """An empty in-memory solr schema, with requests routed through it."""
+    return FakeSchemaApi().install(monkeypatch)
 
 
 @pytest.fixture

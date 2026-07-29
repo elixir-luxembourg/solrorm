@@ -14,12 +14,11 @@
 """Tests for SolrORM itself: entity discovery, field collection and the
 document encoder."""
 
-import json
+import logging
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from solrorm import orm as orm_module
 from solrorm.config import Settings
 from solrorm.orm import (
     SolrORM,
@@ -149,42 +148,7 @@ def test_escaping_neutralises_every_lucene_special_character(value, expected):
     assert escape_solr_value(value) == expected
 
 
-class _SchemaPosts:
-    """Records the schema api posts create_fields issues."""
-
-    def __init__(self):
-        self.calls = []
-
-    def post(self, url, **kwargs):
-        self.calls.append(json.loads(kwargs.get("data") or json.dumps(kwargs["json"])))
-
-        class _Response:
-            status_code = 200
-            ok = True
-
-            def raise_for_status(self):
-                pass
-
-        return _Response()
-
-    def copy_field_sources(self, dest):
-        """The sources copied into C{dest}, in the order they were added."""
-        return [
-            directive["add-copy-field"]["source"]
-            for directive in self.calls
-            if "add-copy-field" in directive
-            and directive["add-copy-field"]["dest"] == dest
-        ]
-
-
-@pytest.fixture
-def schema_posts(monkeypatch):
-    captured = _SchemaPosts()
-    monkeypatch.setattr(orm_module.requests, "post", captured.post)
-    return captured
-
-
-def test_the_host_query_field_table_is_honoured_verbatim(app_config, schema_posts):
+def test_the_host_query_field_table_is_honoured_verbatim(app_config, fake_schema):
     """No entity name and no field name is baked into the library: whatever the
     host lists for an entity is what gets copied into its _text_ catch-all."""
     app_config["SOLR_QUERY_TEXT_FIELD"] = {"widget": ["title", "tags", "id"]}
@@ -193,14 +157,14 @@ def test_the_host_query_field_table_is_honoured_verbatim(app_config, schema_post
     solr_orm._create_or_update_fields_for_class(Widget, update=False)
 
     # "id" is the one source not prefixed with the entity name
-    assert schema_posts.copy_field_sources("widget_text_") == [
+    assert fake_schema.copy_field_sources("widget_text_") == [
         "widget_title",
         "widget_tags",
         "id",
     ]
 
 
-def test_an_entity_absent_from_the_table_falls_back_to_title(app_config, schema_posts):
+def test_an_entity_absent_from_the_table_falls_back_to_title(app_config, fake_schema):
     """Per entity, not per table: a table naming only *some* entities leaves the
     others on SolrORM.DEFAULT_QUERY_FIELDS rather than crashing or copying
     another entity's fields."""
@@ -209,11 +173,11 @@ def test_an_entity_absent_from_the_table_falls_back_to_title(app_config, schema_
 
     solr_orm._create_or_update_fields_for_class(Gadget, update=False)
 
-    assert schema_posts.copy_field_sources("gadget_text_") == ["gadget_title"]
+    assert fake_schema.copy_field_sources("gadget_text_") == ["gadget_title"]
 
 
 def test_the_query_field_table_is_not_mutated_by_field_creation(
-    app_config, schema_posts
+    app_config, fake_schema
 ):
     """The old extended-search block worked by appending to the lists inside the
     host's own config. Nothing in the library writes to the table any more."""
@@ -225,3 +189,135 @@ def test_the_query_field_table_is_not_mutated_by_field_creation(
 
     assert settings.query_text_field == {"widget": ["title"]}
     assert app_config["SOLR_QUERY_TEXT_FIELD"] == {"widget": ["title"]}
+
+
+def test_field_creation_builds_the_whole_schema_from_scratch(settings, fake_schema):
+    """The shape of a first run: the type discriminator, the autocomplete field
+    type, every entity field and the three catch-alls with their copy fields."""
+    SolrORM(settings).create_fields()
+
+    assert "type" in fake_schema.fields
+    assert "autocomplete_text" in fake_schema.field_types
+    assert fake_schema.fields["widget_size"] == "pint"
+    for suffix, field_type, _stored in SolrORM.CATCH_ALL_FIELDS:
+        assert fake_schema.fields[f"widget{suffix}"] == field_type
+        assert fake_schema.copy_field_sources(f"widget{suffix}") == ["widget_title"]
+
+
+def test_field_creation_is_idempotent(settings, fake_schema):
+    """T10's headline fix: the catch-all fields used to be deleted and recreated
+    on every run, discarding everything indexed into them. A second run must
+    touch nothing -- no add, no delete, no duplicate copy field."""
+    SolrORM(settings).create_fields()
+    schema_after_first_run = dict(fake_schema.fields)
+    copy_fields_after_first_run = list(fake_schema.copy_fields)
+    fake_schema.directives.clear()
+
+    SolrORM(settings).create_fields()
+
+    assert fake_schema.directives == []
+    assert fake_schema.fields == schema_after_first_run
+    assert fake_schema.copy_fields == copy_fields_after_first_run
+
+
+def test_a_refused_field_is_logged_and_the_rest_still_created(
+    settings, fake_schema, caplog
+):
+    """One field solr will not have must not abandon the entity's other fields,
+    and the reason has to reach the log rather than stdout."""
+    fake_schema.refuse["widget_size"] = "unknown field type 'pint'"
+
+    with caplog.at_level(logging.WARNING, logger="solrorm.orm"):
+        SolrORM(settings).create_fields()
+
+    assert "widget_size" in caplog.text
+    assert "unknown field type 'pint'" in caplog.text
+    assert "widget_size" not in fake_schema.fields
+    assert "widget_title" in fake_schema.fields
+    assert "widget_text_" in fake_schema.fields
+
+
+def test_a_missing_catch_all_field_is_added_without_recreating_the_others(
+    settings, fake_schema
+):
+    """A schema repair: only what is absent is written."""
+    solr_orm = SolrORM(settings)
+    solr_orm.create_fields()
+    fake_schema.fields.pop("widget_textfuzzy_")
+    fake_schema.copy_fields = [
+        directive
+        for directive in fake_schema.copy_fields
+        if directive["dest"] != "widget_textfuzzy_"
+    ]
+    fake_schema.directives.clear()
+
+    solr_orm.create_fields()
+
+    assert fake_schema.added_fields() == ["widget_textfuzzy_"]
+    assert fake_schema.copy_field_sources("widget_textfuzzy_") == ["widget_title"]
+    assert fake_schema.deleted_fields() == []
+
+
+def test_update_fields_replaces_the_entity_fields_only(settings, fake_schema):
+    """update_fields is about field definitions; the catch-alls and their copy
+    fields are still only ever added when absent."""
+    solr_orm = SolrORM(settings)
+    solr_orm.create_fields()
+    fake_schema.fields["widget_title"] = "text_en"
+    fake_schema.directives.clear()
+
+    solr_orm.update_fields()
+
+    assert any("replace-field" in directive for directive in fake_schema.directives)
+    assert fake_schema.added_fields() == []
+    assert fake_schema.deleted_fields() == []
+    assert fake_schema.fields["widget_title"] == "string"
+
+
+def test_the_autocomplete_field_type_is_created_once_for_the_collection(
+    settings, fake_schema
+):
+    """It is collection-global, so it belongs outside the per-entity loop."""
+    SolrORM(settings).create_fields()
+
+    assert [
+        directive
+        for directive in fake_schema.directives
+        if "add-field-type" in directive
+    ] == [{"add-field-type": SolrORM.AUTOCOMPLETE_FIELD_TYPE}]
+
+
+def test_deletion_covers_every_registered_entity(settings, fake_schema):
+    """delete_fields used to walk __subclasses__() while creation walked the
+    entities registry; the registry is the documented contract."""
+    solr_orm = SolrORM(settings)
+    solr_orm.create_fields()
+
+    solr_orm.delete_fields()
+
+    assert fake_schema.fields == {}
+    assert fake_schema.copy_fields == []
+
+
+def test_field_existence_is_reported_from_the_live_schema(settings, fake_schema):
+    solr_orm = SolrORM(settings)
+    assert not solr_orm.check_fields_existence()
+
+    solr_orm.create_fields()
+
+    assert solr_orm.check_fields_existence() is True
+
+
+def test_missing_and_mismatched_fields_read_the_live_schema(settings, fake_schema):
+    solr_orm = SolrORM(settings)
+    solr_orm.create_fields()
+    assert solr_orm.missing_fields("widget") == []
+    assert solr_orm.mismatched_fields("widget") == []
+
+    fake_schema.fields.pop("widget_tags")
+    fake_schema.fields["widget_title"] = "text_en"
+
+    assert solr_orm.missing_fields("widget") == ["widget_tags"]
+    assert solr_orm.mismatched_fields("widget") == [
+        ("widget_title", "string", "text_en")
+    ]

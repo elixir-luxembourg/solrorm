@@ -18,6 +18,8 @@ These exercise the schema API payloads, so ``requests`` is faked rather than
 the indexer.
 """
 
+import logging
+
 import pytest
 from requests import HTTPError
 
@@ -109,12 +111,6 @@ def test_delete_field_posts_the_delete_field_directive(admin, posts):
     assert kwargs["json"] == {"delete-field": {"name": "widget_title"}}
 
 
-def test_create_field_raises_when_solr_refuses(admin, posts):
-    posts.response = FakeResponse(400, text="bad request")
-    with pytest.raises(HTTPError):
-        admin.create_field("widget_title", "string")
-
-
 def test_delete_field_surfaces_the_reason_solr_gave(admin, posts):
     """A bare raise_for_status would leave only an opaque 400; the copy field
     still referring to the field is the part the operator needs."""
@@ -135,6 +131,83 @@ def test_delete_field_surfaces_the_reason_solr_gave(admin, posts):
     )
     with pytest.raises(HTTPError, match="copyField directive"):
         admin.delete_field("widget_title")
+
+
+def test_create_field_surfaces_the_reason_solr_gave(admin, posts):
+    """Same contract as delete_field: the caller decides what to do about a
+    refusal, so it needs to know what the refusal was."""
+    posts.response = FakeResponse(400, payload={"error": {"msg": "unknown field type"}})
+    with pytest.raises(HTTPError, match="could not create field .*unknown field type"):
+        admin.create_field("widget_title", "nosuchtype")
+
+
+def test_a_refused_copy_field_is_reported_not_raised(admin, posts, caplog):
+    """Copy fields are added speculatively -- one that solr will not have must
+    not abandon the rest of the schema."""
+    posts.response = FakeResponse(
+        400, payload={"error": {"msg": "copyField source/dest already exists"}}
+    )
+    with caplog.at_level(logging.WARNING, logger="solrorm.schema"):
+        assert admin.add_copy_field("widget_title", "widget_text_") is False
+    assert "could not copy widget_title into widget_text_" in caplog.text
+    assert "already exists" in caplog.text
+
+
+def test_add_copy_field_posts_the_add_copy_field_directive(admin, posts):
+    assert admin.add_copy_field("widget_title", "widget_text_") is True
+    _url, kwargs = posts[-1]
+    assert kwargs["json"] == {
+        "add-copy-field": {"source": "widget_title", "dest": "widget_text_"}
+    }
+
+
+def test_delete_copy_fields_batches_the_directives(admin, posts):
+    directives = [
+        {"source": "widget_title", "dest": "widget_text_"},
+        {"source": "id", "dest": "widget_text_"},
+    ]
+    assert admin.delete_copy_fields(directives) is True
+    _url, kwargs = posts[-1]
+    assert kwargs["json"] == {"delete-copy-field": directives}
+
+
+def test_deleting_no_copy_field_asks_solr_nothing(admin, posts):
+    assert admin.delete_copy_fields([]) is True
+    assert posts.calls == []
+
+
+def test_delete_fields_batches_the_names(admin, posts):
+    assert admin.delete_fields(["widget_text_", "widget_textfuzzy_"]) is True
+    _url, kwargs = posts[-1]
+    assert kwargs["json"] == {
+        "delete-field": [{"name": "widget_text_"}, {"name": "widget_textfuzzy_"}]
+    }
+
+
+def test_the_reads_report_what_the_schema_holds(admin, monkeypatch):
+    reads = {
+        f"{SCHEMA_URL}/fields/widget_title": FakeResponse(
+            payload={"field": {"name": "widget_title", "type": "text_en"}}
+        ),
+        f"{SCHEMA_URL}/fields/widget_absent": FakeResponse(404, text="not found"),
+        f"{SCHEMA_URL}/fieldtypes/autocomplete_text": FakeResponse(payload={}),
+        f"{SCHEMA_URL}/copyfields": FakeResponse(
+            payload={
+                "copyFields": [
+                    {"source": "widget_title", "dest": "widget_text_", "maxChars": 100}
+                ]
+            }
+        ),
+    }
+    monkeypatch.setattr(schema_module.requests, "get", lambda url, **kwargs: reads[url])
+
+    assert admin.field_exists("widget_title") is True
+    assert admin.field_exists("widget_absent") is False
+    assert admin.field_type("widget_title") == "text_en"
+    assert admin.field_type("widget_absent") is None
+    assert admin.field_type_exists("autocomplete_text") is True
+    # only source and dest, so the result can be compared with what we mean to add
+    assert admin.copy_fields() == [{"source": "widget_title", "dest": "widget_text_"}]
 
 
 def test_the_error_helper_falls_back_to_the_top_level_message():
