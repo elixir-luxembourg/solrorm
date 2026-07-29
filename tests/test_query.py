@@ -18,9 +18,9 @@ import pytest
 
 from solrorm.config import Settings
 from solrorm.facets import Facet, FacetRange, Range
-from solrorm.orm import SolrORM
+from solrorm.orm import SolrAutomaticQuery, SolrORM
 
-from .conftest import Trinket, Widget, solr_response
+from .conftest import Gadget, Trinket, Widget, solr_response
 
 
 def test_get_looks_the_id_up_with_the_entity_prefix(solr_orm, indexer):
@@ -227,3 +227,51 @@ def test_delete_commits_only_when_asked(solr_orm, indexer):
     assert indexer.commits == []
     Widget.query.delete("widget_title:obsolete", commit=True)
     assert len(indexer.commits) == 1
+
+
+def _automatic_queries(solr_orm, order):
+    """Build a SolrAutomaticQuery per entity class, in the given order."""
+    return {
+        entity_class.__name__.lower(): SolrAutomaticQuery(entity_class, solr_orm)
+        for entity_class in order
+    }
+
+
+@pytest.mark.parametrize("order", [(Widget, Gadget), (Gadget, Widget)])
+def test_each_automatic_query_keeps_its_own_boost(indexer, app_config, order):
+    """The settings are resolved on the instance, so the entity constructed
+    first no longer poisons the ones after it -- in either order."""
+    solr_orm = SolrORM(
+        Settings.from_mapping(
+            {
+                **app_config,
+                "SOLR_BOOST": {"widget": "widget_title^5", "gadget": "gadget_title^9"},
+                "SOLR_DEFAULT_SORT": {"widget": "size", "gadget": "title"},
+            }
+        )
+    )
+    solr_orm.indexer = indexer
+    queries = _automatic_queries(solr_orm, order)
+    assert queries["widget"].BOOST == "widget_title^5"
+    assert queries["gadget"].BOOST == "gadget_title^9"
+    assert queries["widget"].DEFAULT_SORT == "size"
+    assert queries["gadget"].DEFAULT_SORT == "title"
+    # and the shared class is left as it was declared
+    assert SolrAutomaticQuery.BOOST is None
+    assert SolrAutomaticQuery.DEFAULT_SORT == ""
+
+
+def test_the_boost_defaults_to_the_entitys_own_field_prefix(solr_orm):
+    """Without configuration each entity falls back on its own prefix, rather
+    than on whichever entity happened to be built first."""
+    queries = _automatic_queries(solr_orm, (Widget, Gadget))
+    assert queries["gadget"].BOOST == "gadget_title^5 gadget_text_^1"
+
+
+def test_search_sends_the_instance_boost_as_qf(solr_orm, indexer):
+    """search() must read the resolved instance value, not the class default."""
+    _automatic_queries(solr_orm, (Widget,))
+    gadget_query = SolrAutomaticQuery(Gadget, solr_orm)
+    gadget_query.search("anything")
+    _q, params = indexer.last_search
+    assert params["qf"] == "gadget_title^5 gadget_text_^1"

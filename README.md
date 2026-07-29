@@ -113,6 +113,13 @@ Entity classes must therefore be imported, and `settings.entities` populated,
 before `SolrORM(...)` runs; concrete models must subclass `SolrEntity`
 *directly* for the discovery to see them.
 
+`SolrAutomaticQuery` resolves `boost` and `default_sort` per entity when its
+`query` object is built, and stores the result on that object — its
+`SORT_OPTIONS`, `SORT_LABELS`, `BOOST` and `DEFAULT_SORT` class attributes are
+only the declared defaults, so a subclass may override them and entities never
+see each other's values. Configuring `SOLR_BOOST` for one entity leaves the
+others on their own default, `"<entity>_title^5 <entity>_text_^1"`.
+
 Manage the schema and index documents:
 
 ```python

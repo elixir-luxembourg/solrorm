@@ -201,7 +201,7 @@ class SolrQuery(object):
         params = {
             "sort": sort_with_order,
             "defType": "edismax",
-            "qf": self.__class__.BOOST,
+            "qf": self.BOOST,
             "fq": fq,
             "bq": bq,
         }
@@ -500,23 +500,23 @@ class SolrAutomaticQuery(SolrQuery):
         """
         super().__init__(class_object, solr_orm)
         self.entity_name = class_object.__name__.lower()
-        if not self.__class__.SORT_OPTIONS:
-            self.__class__.SORT_OPTIONS = ["title", "id"]
+        # the class attributes are the declared defaults; everything resolved here
+        # is per-instance, so two entities never share each other's settings
+        if not self.SORT_OPTIONS:
+            self.SORT_OPTIONS = ["title", "id"]
         # labels of the sort options that will be offered on the search page
-        if not self.__class__.SORT_LABELS:
-            self.__class__.SORT_LABELS = ["title", "id"]
+        if not self.SORT_LABELS:
+            self.SORT_LABELS = ["title", "id"]
         # allows giving more weight to some fields than others for default search
-        if not self.__class__.BOOST:
-            boosts = solr_orm.settings.boost
-            boost = boosts.get(self.entity_name)
-            self.__class__.BOOST = (
+        if not self.BOOST:
+            boost = solr_orm.settings.boost.get(self.entity_name)
+            self.BOOST = (
                 boost or f"{self.entity_name}_title^5 {self.entity_name}_text_^1"
             )
         # default sort option
-        if not self.__class__.DEFAULT_SORT:
-            default_sorts = solr_orm.settings.default_sort
-            default_sort = default_sorts.get(self.entity_name)
-            self.__class__.DEFAULT_SORT = default_sort or "title"
+        if not self.DEFAULT_SORT:
+            default_sort = solr_orm.settings.default_sort.get(self.entity_name)
+            self.DEFAULT_SORT = default_sort or "title"
 
 
 def _encode_solr_json_value(value):
