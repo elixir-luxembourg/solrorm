@@ -18,7 +18,7 @@ from datetime import datetime
 
 import pytest
 
-from .conftest import Widget
+from .conftest import Gadget, Widget, solr_response
 
 
 def test_plural_name_is_the_lowercased_class_name():
@@ -101,3 +101,43 @@ def test_an_unknown_attribute_still_raises(solr_orm):
     """__getattr__ resolves foreign keys, so it must not swallow typos."""
     with pytest.raises(AttributeError, match="no attribute 'nonexistent'"):
         Widget().nonexistent
+
+
+def test_from_json_round_trips_a_datetime(solr_orm):
+    widget = Widget(entity_id="w-1")
+    widget.published = datetime(2021, 3, 4, 5, 6, 7, 89000)
+    parsed = Widget.from_json(widget.to_dict())
+    assert parsed.published == widget.published
+
+
+def test_from_json_parses_a_datetime_without_microseconds(solr_orm):
+    parsed = Widget.from_json({"widget_published": "2021-03-04T05:06:07Z"})
+    assert parsed.published == datetime(2021, 3, 4, 5, 6, 7)
+
+
+def test_from_json_round_trips_a_binary_blob(solr_orm):
+    """to_dict encodes with base64, so from_json must decode with base64."""
+    widget = Widget(entity_id="w-1")
+    widget.payload = b"\x00\x01binary"
+    assert Widget.from_json(widget.to_dict()).payload == b"\x00\x01binary"
+
+
+def test_from_json_round_trips_an_int(solr_orm):
+    widget = Widget(entity_id="w-1")
+    widget.size = 42
+    assert Widget.from_json(widget.to_dict()).size == 42
+
+
+def test_from_json_keeps_the_id(solr_orm):
+    assert Widget.from_json(Widget(entity_id="w-1").to_dict()).id == "w-1"
+
+
+def test_a_reverse_reference_with_an_underscore_resolves(solr_orm, indexer):
+    """Doodad.gadget is reversed_by='data_use', so the prefix of
+    'data_use_entities' must keep its underscore to be found in
+    reversed_field."""
+    indexer.queue(solr_response([{"id": "doodad_d-1", "doodad_title": "a doodad"}]))
+    holding = Gadget(entity_id="g-1").data_use_entities
+    (_query, params) = indexer.last_search
+    assert params["fq"] == ['type:"doodad"', 'doodad_gadget:"g-1"']
+    assert [doodad.title for doodad in holding] == ["a doodad"]

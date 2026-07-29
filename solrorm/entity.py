@@ -40,6 +40,26 @@ DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 DATETIME_FORMAT_NO_MICRO = "%Y-%m-%dT%H:%M:%SZ"
 
 
+def _parse_solr_datetime(value: Any) -> Any:
+    """
+    Parse a value read back from a solr date field into a datetime.
+
+    Shared by L{SolrEntity.from_json} and C{SolrQuery._build_instance} so the two
+    parsing paths cannot drift apart.
+    @param value: the raw solr value: a string, or a list of them for a
+        multivalued field
+    @return: a datetime, or a list of datetimes for a multivalued field
+    """
+    if isinstance(value, (list, tuple)):
+        return [_parse_solr_datetime(element) for element in value]
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.strptime(value, DATETIME_FORMAT)
+    except ValueError:
+        return datetime.strptime(value, DATETIME_FORMAT_NO_MICRO)
+
+
 class SolrEntity:
     """
     Base class for a solr entity
@@ -92,9 +112,7 @@ class SolrEntity:
         @param attribute: name of the attribute
         @return: list of entities if many to many relationship
         """
-        elements = attribute.rsplit("_")
-        suffix = elements[-1]
-        prefix = "".join(elements[0:-1])
+        prefix, _, suffix = attribute.rpartition("_")
         if suffix in ["entities", "entity"]:
             # check if it's a reversed relationship
             if prefix in self.reversed_field:
@@ -227,15 +245,12 @@ class SolrEntity:
         entity_type = cls.__name__.lower()
         for attribute_name, field in cls._solr_fields.items():
             solr_value = entity_json.get(entity_type + "_" + field.name)
-            if solr_value is not None and field.type == "date":
-                try:
-                    solr_value = datetime.strptime(solr_value, DATETIME_FORMAT)
-                except ValueError:
-                    solr_value = datetime.strptime(solr_value, DATETIME_FORMAT_NO_MICRO)
+            if solr_value is not None and isinstance(field, SolrDateTimeField):
+                solr_value = _parse_solr_datetime(solr_value)
             if solr_value is not None and isinstance(field, SolrIntField):
                 solr_value = int(solr_value)
             if solr_value is not None and isinstance(field, SolrBinaryField):
-                solr_value = base64.b16decode(solr_value)
+                solr_value = base64.b64decode(solr_value)
             setattr(new_instance, attribute_name, solr_value)
         if "id" in entity_json:
             new_instance.id = entity_json.get("id")

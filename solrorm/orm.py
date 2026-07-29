@@ -41,8 +41,9 @@ from requests import HTTPError
 from werkzeug.exceptions import abort
 
 from .facets import Facet, FacetRange
-from .entity import DATETIME_FORMAT, DATETIME_FORMAT_NO_MICRO, SolrEntity
+from .entity import SolrEntity, _parse_solr_datetime
 from .fields import (
+    SolrDateTimeField,
     SolrField,
     SolrForeignKeyField,
     SolrJsonField,
@@ -404,11 +405,8 @@ class SolrQuery(object):
         new_instance = self.class_object()
         for attribute_name, field in self.class_object._solr_fields.items():
             solr_value = doc.get(self.entity_name + "_" + field.name, None)
-            if solr_value is not None and field.type == "pdate":
-                try:
-                    solr_value = datetime.strptime(solr_value, DATETIME_FORMAT)
-                except ValueError:
-                    solr_value = datetime.strptime(solr_value, DATETIME_FORMAT_NO_MICRO)
+            if solr_value is not None and isinstance(field, SolrDateTimeField):
+                solr_value = _parse_solr_datetime(solr_value)
             elif solr_value is not None and isinstance(field, SolrJsonField):
                 if field.model:
                     for count, value in enumerate(solr_value):

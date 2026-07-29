@@ -155,6 +155,34 @@ results = Dataset.query.search(
 The returned `results.facets` keys have the entity prefix stripped, so they match
 the field names given to the facet.
 
+### Relationships
+
+`SolrForeignKeyField` stores the id of the linked entity, and reading the
+attribute suffixed with `_entities` resolves it into instances:
+
+```python
+class Dataset(SolrEntity):
+    project = SolrForeignKeyField("project", "project", reversed_by="data_use")
+
+
+dataset.project_entities  # the Project instances this dataset points at
+project.data_use_entities  # the datasets pointing back at this project
+```
+
+`reversed_by` names the reverse accessor on the *target* entity — here
+`project.data_use_entities`. The name may contain underscores; only the trailing
+`_entity`/`_entities` is stripped. Pass `reversed_multiple=True` for a list, or
+leave it `False` to get a single instance.
+
+### Serialisation
+
+`entity.to_dict()` produces the document that goes to Solr — keys prefixed with
+the entity name, binary fields base64-encoded, `SolrJsonField` values dumped as
+JSON — and `EntityClass.from_json(doc)` reads one back, decoding datetimes,
+integers and binary blobs into Python values. `SolrQuery` uses the same decoding
+when it builds instances from search results; `from_json` leaves
+`SolrJsonField` values as the raw JSON strings.
+
 ## Contents
 
 | Module | Purpose |

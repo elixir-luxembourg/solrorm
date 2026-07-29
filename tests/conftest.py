@@ -135,7 +135,23 @@ class Trinket(SolrEntity):
     note = SolrField("note", indexed=False)
 
 
-ENTITIES = {"widget": Widget, "gadget": Gadget, "trinket": Trinket}
+class Doodad(SolrEntity):
+    """Points at a Gadget through a reverse name that contains an underscore, so
+    C{gadget.data_use_entities} exercises the prefix splitting in
+    C{SolrEntity.__getattr__}."""
+
+    title = SolrField("title")
+    gadget = SolrForeignKeyField(
+        "gadget", "gadget", reversed_by="data_use", reversed_multiple=True
+    )
+
+
+ENTITIES = {
+    "widget": Widget,
+    "gadget": Gadget,
+    "trinket": Trinket,
+    "doodad": Doodad,
+}
 
 
 @pytest.fixture
