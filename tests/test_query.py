@@ -26,7 +26,7 @@ from .conftest import Gadget, Trinket, Widget, solr_response
 def test_get_looks_the_id_up_with_the_entity_prefix(solr_orm, indexer):
     Widget.query.get("w-1")
     q, params = indexer.last_search
-    assert q == 'id:"widget_w-1"'
+    assert q == 'id:"widget_w\\-1"'
     assert params["rows"] == 1
 
 
@@ -44,7 +44,43 @@ def test_get_strips_the_prefix_back_off_the_id(solr_orm, indexer):
 def test_get_by_slug_queries_the_slugs_field(solr_orm, indexer):
     Widget.query.get_by_slug("a-widget")
     q, _params = indexer.last_search
-    assert q == 'widget_slugs:"a-widget"'
+    assert q == 'widget_slugs:"a\\-widget"'
+
+
+def test_an_id_carrying_query_syntax_is_escaped(solr_orm, indexer):
+    Widget.query.get('w-1" OR type:gadget OR id:(x')
+    q, _params = indexer.last_search
+    assert q == 'id:"widget_w\\-1\\"\\ OR\\ type\\:gadget\\ OR\\ id\\:\\(x"'
+
+
+def test_a_slug_carrying_query_syntax_is_escaped(solr_orm, indexer):
+    Widget.query.get_by_slug('a-widget" OR *:*')
+    q, _params = indexer.last_search
+    assert q == 'widget_slugs:"a\\-widget\\"\\ OR\\ \\*\\:\\*"'
+
+
+def test_a_raw_field_query_is_still_passed_through(solr_orm, indexer):
+    """search()'s query argument is solr syntax by contract, so the operators
+    the caller wrote must survive untouched."""
+    Widget.query.search(query="widget_title:foo OR widget_title:bar")
+    q, params = indexer.last_search
+    assert q == "*:*"
+    assert params["fq"] == ["widget_title:foo OR widget_title:bar"]
+
+
+def test_free_text_search_leaves_the_query_untouched(solr_orm, indexer):
+    Widget.query.search(query="a phrase (with parens)")
+    q, _params = indexer.last_search
+    assert q == "widget_text_:'a phrase (with parens)'"
+
+
+def test_search_holding_entities_escapes_its_filter_pair(solr_orm, indexer):
+    Widget.query.search_holding_entities('g-1" OR *:*', "gadget", "widget")
+    _q, params = indexer.last_search
+    assert params["fq"] == [
+        'type:"widget"',
+        'widget_gadget:"g\\-1\\"\\ OR\\ \\*\\:\\*"',
+    ]
 
 
 def test_a_datetime_field_is_parsed_back_into_a_datetime(solr_orm, indexer):
@@ -130,7 +166,7 @@ def test_selected_facet_values_are_quoted_into_a_filter_query(solr_orm, indexer)
     facet.set_values(['a "quoted" widget'])
     Widget.query.search(query="", facets=[facet])
     _q, params = indexer.last_search
-    assert 'widget_title:"a \\"quoted\\" widget"' in params["fq"]
+    assert 'widget_title:"a\\ \\"quoted\\"\\ widget"' in params["fq"]
 
 
 def test_a_range_facet_is_requested_with_its_bounds(solr_orm, indexer):
@@ -147,11 +183,25 @@ def test_a_range_facet_is_requested_with_its_bounds(solr_orm, indexer):
 
 
 def test_selected_range_facet_values_become_filter_queries(solr_orm, indexer):
+    """A selected bucket is a value, not syntax: it is quoted and escaped just
+    like a plain facet's. Hosts wanting a range filter pass ``fq`` themselves."""
     facet = FacetRange("size", "Size", Range(0, 100, 25))
-    facet.set_values(["[0 TO 25]"])
+    facet.set_values(["25"])
     Widget.query.search(query="", facets=[facet])
     _q, params = indexer.last_search
-    assert "widget_size:[0 TO 25]" in params["fq"]
+    assert 'widget_size:"25"' in params["fq"]
+
+
+def test_a_facet_value_carrying_query_syntax_is_neutralised(solr_orm, indexer):
+    """A quote, a colon and a paren in a facet value used to leak into the
+    filter query and change its meaning."""
+    facet = Facet("title", "Title")
+    facet.set_values(['a") OR type:gadget OR ("x'])
+    Widget.query.search(query="", facets=[facet])
+    _q, params = indexer.last_search
+    assert params["fq"] == [
+        'widget_title:"a\\"\\)\\ OR\\ type\\:gadget\\ OR\\ \\(\\"x"'
+    ]
 
 
 def test_the_entity_prefix_is_stripped_from_the_returned_facets(solr_orm, indexer):

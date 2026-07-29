@@ -139,5 +139,5 @@ def test_a_reverse_reference_with_an_underscore_resolves(solr_orm, indexer):
     indexer.queue(solr_response([{"id": "doodad_d-1", "doodad_title": "a doodad"}]))
     holding = Gadget(entity_id="g-1").data_use_entities
     (_query, params) = indexer.last_search
-    assert params["fq"] == ['type:"doodad"', 'doodad_gadget:"g-1"']
+    assert params["fq"] == ['type:"doodad"', 'doodad_gadget:"g\\-1"']
     assert [doodad.title for doodad in holding] == ["a doodad"]

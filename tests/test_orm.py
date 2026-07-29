@@ -24,6 +24,7 @@ from solrorm.orm import (
     SolrQuery,
     _encode_solr_json_value,
     _SOLR_JSON_ENCODER,
+    escape_solr_value,
 )
 
 from .conftest import Gadget, Widget
@@ -126,3 +127,21 @@ def test_the_encoder_the_orm_hands_pysolr_serialises_datetimes():
     must reach Solr as a pdate string rather than raising."""
     encoded = _SOLR_JSON_ENCODER.encode({"widget_published": datetime(2024, 3, 1)})
     assert encoded == '{"widget_published": "2024-03-01T00:00:00.000Z"}'
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("plain", "plain"),
+        ('a "quote"', 'a\\ \\"quote\\"'),
+        ("field:value", "field\\:value"),
+        ("(paren)", "\\(paren\\)"),
+        ("a && b || c", "a\\ \\&\\&\\ b\\ \\|\\|\\ c"),
+        ("back\\slash", "back\\\\slash"),
+        ("wild*card?", "wild\\*card\\?"),
+        ("[0 TO 25]", "\\[0\\ TO\\ 25\\]"),
+        (42, "42"),
+    ],
+)
+def test_escaping_neutralises_every_lucene_special_character(value, expected):
+    assert escape_solr_value(value) == expected

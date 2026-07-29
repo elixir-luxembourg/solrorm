@@ -63,6 +63,26 @@ def fuzzy_search_suffix(settings: Settings) -> str:
     return "~{}".format(settings.fuzzy_search_level)
 
 
+# The Lucene query-syntax special characters, plus whitespace: any of these in a
+# caller-supplied value would otherwise change the meaning of the query it is
+# interpolated into (or make it unparseable).
+_SOLR_SPECIAL_CHARACTERS = re.compile(r'([+\-&|!(){}\[\]^"~*?:\\/\s])')
+
+
+def escape_solr_value(value) -> str:
+    """Backslash-escape a value so that solr reads it as a literal.
+
+    Use this for every caller-supplied value interpolated into solr query
+    syntax -- identifiers, ids, slugs and facet values. It must I{not} be
+    applied to a whole query string: that is solr syntax by contract and
+    escaping it would neutralise the operators the caller wrote.
+
+    @param value: the value to escape, coerced to a string
+    @return: the escaped value
+    """
+    return _SOLR_SPECIAL_CHARACTERS.sub(r"\\\1", str(value))
+
+
 BATCH_SIZE = "500"
 
 logger = logging.getLogger(__name__)
@@ -128,8 +148,12 @@ class SolrQuery(object):
     def search_holding_entities(self, target_entity_id, field_name, source_entity_type):
         params = {
             "fq": [
-                f'type:"{source_entity_type}"',
-                f'{source_entity_type}_{field_name}:"{target_entity_id}"',
+                'type:"{}"'.format(escape_solr_value(source_entity_type)),
+                '{}_{}:"{}"'.format(
+                    escape_solr_value(source_entity_type),
+                    escape_solr_value(field_name),
+                    escape_solr_value(target_entity_id),
+                ),
             ]
         }
         results = self.solr_orm.indexer.search("*:*", **params)
@@ -163,7 +187,11 @@ class SolrQuery(object):
     ) -> pysolr.Results:
         """
         Execute a solr search
-        @param query: solr query string
+        @param query: solr query string. It is passed through B{unescaped} -- it
+        is solr syntax by contract, so operators the caller writes keep working
+        and untrusted input must not be interpolated into it. Everything else
+        interpolated around it (field prefixes, facet values) I{is} escaped with
+        L{escape_solr_value}.
         @param rows: maximum number of results to return, default to 50
         @param start: used for pagination of the results, default to 0
         @param sort: field to sort on, default to DEFAULT_SORT class attribute
@@ -215,21 +243,20 @@ class SolrQuery(object):
             ):  # for queries like "dataset_disease:*corona*"
                 fq.append(query)
             else:
+                entity_name = escape_solr_value(self.entity_name)
                 if fuzzy:
                     fuzzy_terms = "OR {}_textfuzzy_:{}{}".format(
-                        self.entity_name,
+                        entity_name,
                         query,
                         fuzzy_search_suffix(self.solr_orm.settings),
                     )
-                    query = "({}_text_:'{}' {})".format(
-                        self.entity_name, query, fuzzy_terms
-                    )
+                    query = "({}_text_:'{}' {})".format(entity_name, query, fuzzy_terms)
                 else:
                     if edismax:
                         pattern = query
                     else:
                         pattern = "{}_text_:'{}'"
-                    query = pattern.format(self.entity_name, query)
+                    query = pattern.format(entity_name, query)
 
                 if (
                     "score" in sort_with_order
@@ -273,20 +300,19 @@ class SolrQuery(object):
                     params["facet.range"].append(
                         f"{self.entity_name}_{facet.field_name}"
                     )
-                    for value in facet.values:
-                        fq.append(
-                            "{}_{}:{}".format(self.entity_name, facet.field_name, value)
-                        )
                 else:
-                    for value in facet.values:
-                        value = value.replace('"', '\\"')
-                        fq.append(
-                            '{}_{}:"{}"'.format(
-                                self.entity_name, facet.field_name, value
-                            )
-                        )
                     params["facet.field"].append(
                         "{}_{}".format(self.entity_name, facet.field_name)
+                    )
+                # the selected values are caller data, so they are escaped and
+                # quoted the same way for both facet kinds
+                for value in facet.values:
+                    fq.append(
+                        '{}_{}:"{}"'.format(
+                            escape_solr_value(self.entity_name),
+                            escape_solr_value(facet.field_name),
+                            escape_solr_value(value),
+                        )
                     )
         try:
             results = self.solr_orm.indexer.search(q, **params)
@@ -366,7 +392,7 @@ class SolrQuery(object):
         else:
             entity_id_query = entity_id
         results = self.solr_orm.indexer.search(
-            q='id:"{}"'.format(entity_id_query), rows=1
+            q='id:"{}"'.format(escape_solr_value(entity_id_query)), rows=1
         )
         if results.hits == 0:
             return None
@@ -382,7 +408,10 @@ class SolrQuery(object):
         """
 
         results = self.solr_orm.indexer.search(
-            q='{}_slugs:"{}"'.format(self.entity_name, slug), rows=1
+            q='{}_slugs:"{}"'.format(
+                escape_solr_value(self.entity_name), escape_solr_value(slug)
+            ),
+            rows=1,
         )
         if results.hits == 0:
             return None
@@ -449,9 +478,13 @@ class SolrQuery(object):
     def delete(self, query, commit=False):
         """
         Delete entities from solr
-        @param query: query string to select entities to delete
+        @param query: solr query syntax selecting the entities to delete. It is
+        passed through B{unescaped} -- it is a query, not a value -- so never
+        build it by interpolating untrusted input.
         """
-        self.solr_orm.indexer.delete(q=f"{query} AND type:{self.entity_name}")
+        self.solr_orm.indexer.delete(
+            q=f"{query} AND type:{escape_solr_value(self.entity_name)}"
+        )
         if commit:
             self.solr_orm.indexer.commit()
 

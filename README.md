@@ -155,6 +155,30 @@ results = Dataset.query.search(
 The returned `results.facets` keys have the entity prefix stripped, so they match
 the field names given to the facet.
 
+### Escaping: what is a value and what is a query
+
+Ids, slugs and selected facet values are treated as **values**: they are
+backslash-escaped with `escape_solr_value` before being interpolated into Lucene
+syntax, so a quote, a colon or a paren in user input can no longer break the
+query or change its meaning. This includes a `FacetRange`'s selected values — to
+filter on an interval, pass the range yourself in `fq`:
+
+```python
+Dataset.query.search(query="", fq=["dataset_year:[2000 TO 2010]"])
+```
+
+The `query` argument of `search()` and the `query` argument of `delete()` are
+the deliberate exceptions: they are documented as Solr query syntax and are
+passed through **unescaped**, so a user typing `dataset_title:cancer OR
+dataset_year:2020` still gets the query they wrote. Never build those two
+strings by interpolating untrusted input — escape the values you interpolate:
+
+```python
+from solrorm import escape_solr_value
+
+Dataset.query.search(query=f'dataset_title:"{escape_solr_value(user_input)}"')
+```
+
 ### Relationships
 
 `SolrForeignKeyField` stores the id of the linked entity, and reading the
@@ -187,7 +211,7 @@ when it builds instances from search results; `from_json` leaves
 
 | Module | Purpose |
 |---|---|
-| `solrorm.orm` | `SolrORM`, `SolrQuery`, `SolrAutomaticQuery` — Solr access + query building |
+| `solrorm.orm` | `SolrORM`, `SolrQuery`, `SolrAutomaticQuery`, `escape_solr_value` — Solr access + query building |
 | `solrorm.entity` | `SolrEntity` — base class for indexed entities |
 | `solrorm.fields` | typed field descriptors (`SolrField`, `SolrIntField`, ...) |
 | `solrorm.schema` | `SolrSchemaAdmin` — schema management |
