@@ -111,7 +111,10 @@ which `delete_fields()` does for the whole entity.
 
 ## Usage
 
-Declare entities as `SolrEntity` subclasses with typed field descriptors:
+Declare entities as `SolrEntity` subclasses with typed field descriptors. A
+field declared on the class describes the schema; read on an instance it yields
+that instance's value, and a subclass may redeclare an inherited field —
+`created` with `indexed=False`, say — to override it:
 
 ```python
 from solrorm import (
@@ -204,6 +207,20 @@ dataset = Dataset.query.get("ds-1")
 count = Dataset.query.count()
 for dataset in Dataset.query.all():
     ...
+ids = Dataset.query.all_ids()
+```
+
+`results.has_more` says whether Solr returned a full page, so there may be
+another one; a search with no row limit (`rows=0` or `rows=None`) reports
+`False`. `all()` and `all_ids()` page through the collection with a Solr cursor
+rather than asking for everything at once.
+
+Deleting takes either an id or a query, and exactly one of the two:
+
+```python
+solr_orm.delete(entity_id="dataset_ds-1")
+solr_orm.delete(query="type:dataset AND dataset_year:1999")
+Dataset.query.delete("dataset_year:1999")  # scoped to the entity type for you
 ```
 
 Facet on individual values with `Facet`, or on intervals with `FacetRange`:
@@ -297,9 +314,27 @@ leave it `False` to get a single instance.
 `entity.to_dict()` produces the document that goes to Solr — keys prefixed with
 the entity name, binary fields base64-encoded, `SolrJsonField` values dumped as
 JSON — and `EntityClass.from_json(doc)` reads one back, decoding datetimes,
-integers and binary blobs into Python values. `SolrQuery` uses the same decoding
-when it builds instances from search results; `from_json` leaves
-`SolrJsonField` values as the raw JSON strings.
+integers, binary blobs and JSON into Python values. `SolrQuery` uses the very
+same helpers when it builds instances from search results, so the two paths
+cannot disagree.
+
+A `SolrJsonField` given a `model` serialises each element with the model's
+`to_json()` and rebuilds it with its `from_json()` classmethod, in both
+directions:
+
+```python
+class Contact:
+    def to_json(self):
+        return {"name": self.name}
+
+    @classmethod
+    def from_json(cls, data):
+        return cls(data["name"])
+
+
+class Dataset(SolrEntity):
+    contacts = SolrJsonField("contacts", model=Contact, multivalued=True)
+```
 
 ## Contents
 
@@ -326,6 +361,8 @@ uv run ruff format .
 uv run pytest
 uv run ty check
 ```
+
+All four are gates in CI, `ty` included — the codebase type-checks clean.
 
 The test suite needs no reachable Solr: `tests/conftest.py` fakes the indexer.
 

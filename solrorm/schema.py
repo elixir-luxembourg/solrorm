@@ -62,7 +62,7 @@ class SolrSchemaAdmin:
     rest of the schema.
     """
 
-    def __init__(self, url: str):
+    def __init__(self, url: str) -> None:
         """
         @param url: url of the schema api of the collection to administer
         """

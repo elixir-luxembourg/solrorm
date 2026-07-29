@@ -18,7 +18,7 @@ import pytest
 
 from solrorm.config import Settings
 from solrorm.facets import Facet, FacetRange, Range
-from solrorm.orm import SolrAutomaticQuery, SolrORM
+from solrorm.orm import BATCH_SIZE, SolrAutomaticQuery, SolrORM
 
 from .conftest import Gadget, Trinket, Widget, solr_response
 
@@ -37,6 +37,7 @@ def test_get_returns_none_when_nothing_matches(solr_orm, indexer):
 def test_get_strips_the_prefix_back_off_the_id(solr_orm, indexer):
     indexer.queue(solr_response([{"id": "widget_w-1", "widget_title": "a widget"}]))
     widget = Widget.query.get("w-1")
+    assert widget is not None
     assert widget.id == "w-1"
     assert widget.title == "a widget"
 
@@ -90,6 +91,7 @@ def test_a_datetime_field_is_parsed_back_into_a_datetime(solr_orm, indexer):
         )
     )
     widget = Widget.query.get("w-1")
+    assert widget is not None
     assert widget.published.year == 2024
     assert widget.published.month == 3
 
@@ -265,6 +267,40 @@ def test_all_follows_the_cursor_until_it_stops_moving(solr_orm, indexer):
 def test_all_ids_strips_the_entity_prefix(solr_orm, indexer):
     indexer.queue(solr_response([{"id": "widget_w-1"}, {"id": "widget_w-2"}]))
     assert Widget.query.all_ids() == ["w-1", "w-2"]
+
+
+def test_all_ids_pages_with_a_cursor(solr_orm, indexer):
+    """It used to ask solr for a million rows in one request."""
+    indexer.queue(
+        solr_response([{"id": "widget_w-1"}], next_cursor="page2"),
+        solr_response([{"id": "widget_w-2"}], next_cursor="page2"),
+    )
+
+    assert Widget.query.all_ids() == ["w-1", "w-2"]
+
+    assert [params.get("cursorMark") for _q, params in indexer.searches] == [
+        "*",
+        "page2",
+    ]
+    assert all(params["rows"] == BATCH_SIZE for _q, params in indexer.searches)
+    assert all(params["fl"] == "id" for _q, params in indexer.searches)
+
+
+def test_the_batch_size_is_a_number(solr_orm):
+    """It was the string "500", which solr accepts but arithmetic does not."""
+    assert isinstance(BATCH_SIZE, int)
+
+
+@pytest.mark.parametrize("rows", [0, None])
+def test_an_unlimited_search_reports_no_further_page(solr_orm, indexer, rows):
+    """``rows`` only reaches solr when truthy, so comparing the document count
+    against it used to raise TypeError on exactly the searches that ask for
+    everything."""
+    results = Widget.query.search(query="", rows=rows)
+
+    assert results.has_more is False
+    _q, params = indexer.last_search
+    assert "rows" not in params
 
 
 def test_delete_restricts_the_query_to_the_entity_type(solr_orm, indexer):

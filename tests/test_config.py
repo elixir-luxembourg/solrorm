@@ -19,7 +19,7 @@ import pytest
 
 from solrorm.config import Settings
 
-from .conftest import SOLR_COLLECTION, SOLR_ENDPOINT
+from .conftest import SOLR_COLLECTION, SOLR_ENDPOINT, Widget
 
 
 def test_the_defaults_cover_every_optional_setting():
@@ -35,14 +35,14 @@ def test_the_defaults_cover_every_optional_setting():
 def test_settings_are_frozen():
     settings = Settings(endpoint=SOLR_ENDPOINT, collection=SOLR_COLLECTION)
     with pytest.raises(dataclasses.FrozenInstanceError):
-        settings.collection = "other"
+        setattr(settings, "collection", "other")
 
 
 def test_each_instance_gets_its_own_mutable_defaults():
     """A shared default dict would leak one host's entities into another's."""
     first = Settings(endpoint=SOLR_ENDPOINT, collection="a")
     second = Settings(endpoint=SOLR_ENDPOINT, collection="b")
-    first.entities["widget"] = object()
+    first.entities["widget"] = Widget
     assert second.entities == {}
 
 

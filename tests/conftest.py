@@ -35,6 +35,7 @@ from solrorm.fields import (
     SolrField,
     SolrForeignKeyField,
     SolrIntField,
+    SolrJsonField,
 )
 
 # deliberately unroutable: a test that slips past the fake must fail, not hang
@@ -262,6 +263,31 @@ class FakeSchemaApi:
         ]
 
 
+class Part:
+    """
+    The kind of model a SolrJsonField can carry.
+
+    Not a SolrEntity: a json field's model is anything providing C{to_json} to
+    serialize an element with and a C{from_json} classmethod to rebuild it.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def to_json(self):
+        return {"name": self.name}
+
+    @classmethod
+    def from_json(cls, data):
+        return cls(data["name"])
+
+    def __eq__(self, other):
+        return isinstance(other, Part) and other.name == self.name
+
+    def __repr__(self):
+        return f"Part({self.name!r})"
+
+
 class Gadget(SolrEntity):
     """Target of Widget's foreign key."""
 
@@ -278,6 +304,8 @@ class Widget(SolrEntity):
     published = SolrDateTimeField("published")
     payload = SolrBinaryField("payload")
     gadget = SolrForeignKeyField("gadget", "gadget", multivalued=True)
+    notes = SolrJsonField("notes")
+    parts = SolrJsonField("parts", model=Part, multivalued=True)
 
 
 class Trinket(SolrEntity):

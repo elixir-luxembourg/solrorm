@@ -20,6 +20,8 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from solrorm.config import Settings
+from solrorm.entity import SolrEntity
+from solrorm.fields import SolrDateTimeField
 from solrorm.orm import (
     SolrORM,
     SolrQuery,
@@ -52,6 +54,32 @@ def test_field_collection_includes_the_inherited_base_fields(solr_orm):
     them or the schema will be missing columns the ORM writes."""
     fields = solr_orm.get_fields_for_class(Widget)
     assert {"created", "modified", "former_ids", "connector_name"} <= set(fields)
+
+
+def test_a_subclass_can_override_an_inherited_field(solr_orm):
+    """The bases used to be walked after the class's own attributes, so
+    SolrEntity's indexed 'created' silently won over a subclass's redefinition
+    of it."""
+
+    class Gizmo(SolrEntity):
+        created = SolrDateTimeField("created", indexed=False)
+
+    fields = solr_orm.get_fields_for_class(Gizmo)
+
+    assert fields["created"].indexed is False
+
+
+def test_delete_wants_exactly_one_of_an_id_and_a_query(solr_orm, indexer):
+    """It used to null the query when both were given and pass None for both
+    when neither was, deleting nothing without saying so."""
+    with pytest.raises(ValueError):
+        solr_orm.delete()
+    with pytest.raises(ValueError):
+        solr_orm.delete("w-1", "widget_title:obsolete")
+
+    solr_orm.delete(query="widget_title:obsolete")
+
+    assert indexer.deleted[-1] == {"id": None, "q": "widget_title:obsolete"}
 
 
 def test_the_schema_url_is_built_from_endpoint_and_collection(solr_orm):

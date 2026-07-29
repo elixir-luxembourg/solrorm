@@ -43,6 +43,7 @@ PUBLIC_NAMES = [
     "SolrORMError",
     "SolrQuery",
     "SolrQueryException",
+    "SolrResults",
     "SolrSchemaAdmin",
     "SolrTextField",
     "escape_solr_value",

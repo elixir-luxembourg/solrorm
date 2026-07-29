@@ -26,7 +26,7 @@ import logging
 
 import math
 
-from typing import Tuple, Generator, List
+from typing import Any, Generator, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,9 @@ class Range(object):
     to be displayed as facets rather that each value separately
     """
 
-    def __init__(self, start: float, end: float, gap: float, other: str = None) -> None:
+    def __init__(
+        self, start: float, end: float, gap: float, other: Optional[str] = None
+    ) -> None:
         """
         Initialize a Range instance with start, end , gap and other parameters
         see https://lucene.apache.org/solr/guide/8_4/faceting.html#Faceting-RangeFaceting
@@ -76,7 +78,10 @@ class Facet(object):
     """
 
     def __init__(
-        self, field_name: str, label: str = None, default_values: List = None
+        self,
+        field_name: str,
+        label: Optional[str] = None,
+        default_values: Optional[List[Any]] = None,
     ) -> None:
         """
         Initialize a Facet instance setting the field name, the label and default values
@@ -86,19 +91,19 @@ class Facet(object):
         """
         self.using_default = False
         self.label = label
-        self.range = range
         self.field_name = field_name
-        self.values = []
-        self.range = None
+        self.values: List[Any] = []
+        # only a FacetRange carries one; see the subclass
+        self.range: Optional[Range] = None
         self.default_values = default_values or []
 
-    def set_values(self, values):
+    def set_values(self, values: List[Any]) -> None:
         self.values = values
         self.using_default = False
         if values == self.default_values:
             self.using_default = True
 
-    def use_default(self):
+    def use_default(self) -> None:
         if self.default_values:
             self.set_values(self.default_values)
             self.using_default = True
@@ -109,6 +114,9 @@ class FacetRange(Facet):
     Version of the Facet class that allows specifying a range attribute
     Can be used to facet per range of values rather than each individual value
     """
+
+    # unlike a plain Facet, a range facet always carries one
+    range: Range
 
     def __init__(self, field_name: str, label: str, facet_range: Range) -> None:
         """

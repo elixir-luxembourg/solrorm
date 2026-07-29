@@ -41,7 +41,7 @@ from .fields import (
     SolrLongField,
     SolrTextField,
 )
-from .orm import SolrAutomaticQuery, SolrORM, SolrQuery, escape_solr_value
+from .orm import SolrAutomaticQuery, SolrORM, SolrQuery, SolrResults, escape_solr_value
 from .schema import SolrSchemaAdmin
 
 __all__ = [
@@ -66,6 +66,7 @@ __all__ = [
     "SolrORMError",
     "SolrQuery",
     "SolrQueryException",
+    "SolrResults",
     "SolrSchemaAdmin",
     "SolrTextField",
     "escape_solr_value",

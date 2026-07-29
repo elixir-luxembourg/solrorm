@@ -18,7 +18,10 @@ from datetime import datetime
 
 import pytest
 
-from .conftest import Gadget, Widget, solr_response
+from solrorm.entity import SolrEntity
+from solrorm.fields import SolrField
+
+from .conftest import Gadget, Part, Widget, solr_response
 
 
 def test_plural_name_is_the_lowercased_class_name():
@@ -38,9 +41,28 @@ def test_the_timestamps_start_equal(solr_orm):
 
 
 def test_unset_fields_are_none_rather_than_the_descriptor(solr_orm):
-    """Without the __init__ reset, attribute access would return the
-    SolrField instance itself."""
+    """A field read on an instance is a value, never the field object."""
     assert Widget().title is None
+
+
+def test_a_field_read_on_the_class_is_still_the_field(solr_orm):
+    """Field collection reads the class attributes, so the descriptor must hand
+    itself back when there is no instance to read a value from."""
+    assert isinstance(Widget.title, SolrField)
+    assert Widget.title.name == "title"
+
+
+def test_two_instances_do_not_share_a_field_value(solr_orm):
+    first, second = Widget(), Widget()
+    first.title = "the first"
+    assert second.title is None
+
+
+def test_each_entity_class_gets_its_own_reverse_field_registry():
+    """reversed_field used to be one dict on the base class, shared by every
+    subclass and working only because SolrORM reset it during discovery."""
+    assert Gadget.reversed_field is not SolrEntity.reversed_field
+    assert Gadget.reversed_field is not Widget.reversed_field
 
 
 def test_to_dict_prefixes_every_key_with_the_entity_name(solr_orm):
@@ -126,6 +148,49 @@ def test_from_json_round_trips_an_int(solr_orm):
     widget = Widget(entity_id="w-1")
     widget.size = 42
     assert Widget.from_json(widget.to_dict()).size == 42
+
+
+def test_from_json_round_trips_a_json_field(solr_orm):
+    """from_json used to hand back the raw json string where _build_instance
+    decoded it; both now go through the same helper."""
+    widget = Widget(entity_id="w-1")
+    widget.notes = {"colour": "red", "sizes": [1, 2]}
+    assert Widget.from_json(widget.to_dict()).notes == {
+        "colour": "red",
+        "sizes": [1, 2],
+    }
+
+
+def test_from_json_round_trips_a_json_field_with_a_model(solr_orm):
+    widget = Widget(entity_id="w-1")
+    widget.parts = [Part("bolt"), Part("nut")]
+
+    parsed = Widget.from_json(widget.to_dict())
+
+    assert parsed.parts == [Part("bolt"), Part("nut")]
+
+
+def test_to_dict_leaves_the_models_it_serialised_in_place(solr_orm):
+    """Serializing used to overwrite the entity's own list with the json it
+    produced, so the second call had nothing left to serialize."""
+    widget = Widget(entity_id="w-1")
+    widget.parts = [Part("bolt")]
+
+    widget.to_dict()
+
+    assert widget.parts == [Part("bolt")]
+
+
+def test_the_search_and_json_paths_decode_a_model_alike(solr_orm):
+    """_build_instance and from_json must agree; they used to drift."""
+    widget = Widget(entity_id="w-1")
+    widget.parts = [Part("bolt")]
+    document = widget.to_dict()
+    document["id"] = "widget_w-1"
+
+    built = Widget.query._build_instance(document)
+
+    assert built.parts == Widget.from_json(widget.to_dict()).parts
 
 
 def test_from_json_keeps_the_id(solr_orm):

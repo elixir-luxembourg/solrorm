@@ -24,15 +24,19 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Optional, Any
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional, Tuple
 
 from .fields import (
     SolrDateTimeField,
     SolrField,
+    SolrForeignKeyField,
     SolrIntField,
     SolrJsonField,
     SolrBinaryField,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - imported for annotations only
+    from .orm import SolrQuery
 
 logger = logging.getLogger(__name__)
 # datetime formats for json serialization
@@ -60,6 +64,24 @@ def _parse_solr_datetime(value: Any) -> Any:
         return datetime.strptime(value, DATETIME_FORMAT_NO_MICRO)
 
 
+def _parse_solr_json(value: Any, model: Optional[Any] = None) -> Any:
+    """
+    Parse a value read back from a solr field holding JSON.
+
+    Shared by L{SolrEntity.from_json} and C{SolrQuery._build_instance} so the two
+    parsing paths cannot drift apart.
+    @param value: the raw solr value: a JSON string, or a list of them when the
+        field declares a model
+    @param model: the class each element was serialized from, if any. It must
+        provide a C{from_json} classmethod, the counterpart of the C{to_json}
+        L{SolrEntity.to_dict} calls.
+    @return: the decoded value, or the list of rebuilt model instances
+    """
+    if model is None:
+        return json.loads(value)
+    return [model.from_json(json.loads(element)) for element in value]
+
+
 class SolrEntity:
     """
     Base class for a solr entity
@@ -72,13 +94,30 @@ class SolrEntity:
     former_ids = SolrField("former_ids", multivalued=True, indexed=False)
     connector_name = SolrField("connector_name", multivalued=False, indexed=False)
 
-    # dict holding reverse foreign keys references
-    reversed_field = {}
-    query = None
+    # reverse foreign key references, as reverse name -> (source entity name,
+    # field name, multiple). Each subclass gets its own dict -- see
+    # __init_subclass__ -- and SolrORM.__init__ repopulates it during discovery.
+    reversed_field: ClassVar[Dict[str, Tuple[str, str, bool]]] = {}
+    # the solr fields of the class, as attribute name -> field; collected by
+    # SolrORM.__init__, so it does not exist before an ORM has been constructed
+    _solr_fields: ClassVar[Dict[str, SolrField]]
+    # the query object of the class, likewise attached by SolrORM.__init__
+    query: ClassVar["SolrQuery"]
     # the SolrORM that discovered this class; set by SolrORM.__init__, and the
     # entity's only route to the settings it was configured with
     _solr_orm: Any = None
     ADD_PREFIX_ID = True
+    id: Optional[str]
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """
+        Give every entity class its own reverse foreign key registry.
+
+        Without this they would all share the base class's dict and the last
+        entity declared would decide what the others resolve.
+        """
+        super().__init_subclass__(**kwargs)
+        cls.reversed_field = {}
 
     def __init__(self, entity_id: Optional[str] = None) -> None:
         """
@@ -135,11 +174,11 @@ class SolrEntity:
             else:
                 entities_ids = getattr(self, prefix, [])
                 results = []
-                if entities_ids:
+                field = self._solr_fields.get(prefix)
+                if entities_ids and isinstance(field, SolrForeignKeyField):
                     # get foreign entity type
-                    linked_entity_name = self._solr_fields[prefix].linked_entity_name
                     linked_entity_class = self._solr_orm.settings.entities[
-                        linked_entity_name
+                        field.linked_entity_name
                     ]
                     for entity_id in entities_ids:
                         linked_entity = linked_entity_class.query.get(entity_id)
@@ -152,7 +191,7 @@ class SolrEntity:
             )
         )
 
-    def save(self, commit=False, soft_commit=False) -> str:
+    def save(self, commit: bool = False, soft_commit: bool = False) -> str:
         """
         Create dict representation of the entity instance and index it in solr
         Beware that this method doesn't trigger a commit
@@ -184,17 +223,16 @@ class SolrEntity:
             self._solr_orm.commit(soft_commit=soft_commit)
         return result_add
 
-    def to_dict(self, add_prefix=True) -> dict:
+    def to_dict(self, add_prefix: bool = True) -> Dict[str, Any]:
         """
         Create a dict containing all attributes as key and the field values as value
+        @param add_prefix: prefix each key with the entity name, as solr stores it
         @return: dict representation of the entity instance
         """
-        entity_dict = {}
+        entity_dict: Dict[str, Any] = {}
         entity_type = self.__class__.__name__.lower()
         for attribute_name, field in self.__class__._solr_fields.items():
-            attribute_value = getattr(self, attribute_name, None)
-            if isinstance(attribute_value, SolrField):
-                attribute_value = None
+            attribute_value: Any = getattr(self, attribute_name, None)
             if add_prefix:
                 key = entity_type + "_" + field.name
             else:
@@ -205,20 +243,23 @@ class SolrEntity:
                 and isinstance(attribute_value, bytes)
             ):
                 attribute_value = base64.b64encode(attribute_value).decode("ascii")
-            if isinstance(field, SolrJsonField):
+            elif isinstance(field, SolrJsonField):
                 if field.model:
                     if attribute_value is not None:
-                        for count, value in enumerate(attribute_value):
-                            attribute_value[count] = json.dumps(value.to_json())
+                        # a new list: serializing an entity must not replace the
+                        # model instances it still holds with their json
+                        attribute_value = [
+                            json.dumps(value.to_json()) for value in attribute_value
+                        ]
                 else:
                     attribute_value = json.dumps(attribute_value)
             entity_dict[key] = attribute_value
-        if self.id is None or isinstance(self.id, SolrField):
+        if not self.id:
             self.id = str(uuid.uuid1())
         entity_dict["id"] = self.id.replace(" ", "_")
         return entity_dict
 
-    def to_api_dict(self) -> dict:
+    def to_api_dict(self) -> Dict[str, Any]:
         """
         Similar to method to_dict but can be used to restrict the list of fields exported via api endpoints.
         @return: dict representation of the entity instance
@@ -235,7 +276,7 @@ class SolrEntity:
         return self._solr_orm.delete(self.id)
 
     @classmethod
-    def from_json(cls, entity_json: dict) -> "SolrEntity":
+    def from_json(cls, entity_json: Dict[str, Any]) -> "SolrEntity":
         """
         Create a SolrEntity instance based on a dict containing the fields names and values
         @param entity_json: source dict
@@ -244,17 +285,20 @@ class SolrEntity:
         new_instance = cls()
         entity_type = cls.__name__.lower()
         for attribute_name, field in cls._solr_fields.items():
-            solr_value = entity_json.get(entity_type + "_" + field.name)
-            if solr_value is not None and isinstance(field, SolrDateTimeField):
-                solr_value = _parse_solr_datetime(solr_value)
-            if solr_value is not None and isinstance(field, SolrIntField):
-                solr_value = int(solr_value)
-            if solr_value is not None and isinstance(field, SolrBinaryField):
-                solr_value = base64.b64decode(solr_value)
+            solr_value: Any = entity_json.get(entity_type + "_" + field.name)
+            if solr_value is not None:
+                if isinstance(field, SolrDateTimeField):
+                    solr_value = _parse_solr_datetime(solr_value)
+                elif isinstance(field, SolrIntField):
+                    solr_value = int(solr_value)
+                elif isinstance(field, SolrBinaryField):
+                    solr_value = base64.b64decode(solr_value)
+                elif isinstance(field, SolrJsonField):
+                    solr_value = _parse_solr_json(solr_value, field.model)
             setattr(new_instance, attribute_name, solr_value)
         if "id" in entity_json:
             new_instance.id = entity_json.get("id")
         return new_instance
 
-    def set_computed_values(self):
+    def set_computed_values(self) -> None:
         pass

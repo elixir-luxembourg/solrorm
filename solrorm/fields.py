@@ -20,7 +20,7 @@ Module containing the SolrField class and subclasses for different fields type
 """
 
 import logging
-from typing import Optional
+from typing import Any, Optional, overload
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,12 @@ class SolrField:
         - name: field name, can contain only alphanumeric characters and _
         - field_type: field type, see solr documentation for list of types, default type is string
         - multivalued: can the field contain multiple values (list)
+
+    A field is a I{descriptor}: declared on a L{SolrEntity} subclass it defines
+    the schema, but read on an instance it yields the value that instance
+    carries, and assigning to it stores that value. Reading it on the class
+    itself still yields the field, which is how the entity's schema is
+    collected.
     """
 
     def __init__(
@@ -42,7 +48,7 @@ class SolrField:
         field_type: str = "string",
         indexed: bool = True,
         stored: bool = True,
-        multivalued: object = False,
+        multivalued: bool = False,
     ) -> None:
         self.multivalued = multivalued
         self.indexed = indexed
@@ -50,6 +56,27 @@ class SolrField:
         self.name = name
         self.type = field_type
         self.attribute_name = attribute_name or name
+        # the attribute the field is declared as, which is the key the value is
+        # kept under in the instance dict. Defaults to the field name for a
+        # field that is never assigned to a class body.
+        self._storage_name = self.attribute_name
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self._storage_name = name
+
+    @overload
+    def __get__(self, instance: None, owner: Optional[type] = None) -> "SolrField": ...
+
+    @overload
+    def __get__(self, instance: object, owner: Optional[type] = None) -> Any: ...
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        return instance.__dict__.get(self._storage_name)
+
+    def __set__(self, instance: object, value: Any) -> None:
+        instance.__dict__[self._storage_name] = value
 
 
 class SolrCaseInsensitiveStringField(SolrField):
@@ -204,7 +231,7 @@ class SolrJsonField(SolrField):
         indexed: bool = True,
         stored: bool = True,
         multivalued: bool = False,
-        model: object = None,
+        model: Optional[Any] = None,
     ) -> None:
         self.model = model
         super().__init__(name, attribute_name, "text_en", indexed, stored, multivalued)
@@ -237,7 +264,7 @@ class SolrForeignKeyField(SolrField):
         entity_name: str,
         attribute_name: Optional[str] = None,
         multivalued: bool = False,
-        reversed_by: "SolrEntity" = None,  # noqa: F821
+        reversed_by: Optional[str] = None,
         reversed_multiple: bool = False,
     ) -> None:
         self.linked_entity_name = entity_name

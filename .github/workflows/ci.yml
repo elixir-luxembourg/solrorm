@@ -32,9 +32,5 @@ jobs:
       - name: Test
         run: uv run pytest
 
-      # Not yet a gate: the pre-existing code has 44 ty diagnostics, several of
-      # them the very bugs T4-T6 of RELEASE_PLAN.md fix. T11 clears the backlog
-      # and drops continue-on-error so regressions start failing the build.
-      - name: Type check (informational)
+      - name: Type check
         run: uv run ty check
-        continue-on-error: true
