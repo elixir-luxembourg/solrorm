@@ -145,11 +145,8 @@ class SolrQuery(Generic[E]):
         """
         Check if the given query has a valid Solr query field preceding the ':'
 
-        Args:
-            query (str): The query string to check.
-
-        Returns:
-            bool: True if the query has a valid Solr query field, False otherwise.
+        @param query: the query string to check
+        @return: True if the query has a valid Solr query field, False otherwise
         """
         parts = query.split("_")
 
@@ -195,6 +192,13 @@ class SolrQuery(Generic[E]):
         return results
 
     def format_field_name_with_order(self, field_name: str) -> str:
+        """
+        Prefix a sort clause with the entity name, unless it is collection-wide.
+
+        @param field_name: a sort clause, e.g. C{title asc}
+        @return: the clause with the entity prefix added, C{id} and C{score}
+            left as they are
+        """
         if field_name.split(" ")[0] in ["id", "score"]:
             return field_name
         else:
@@ -229,9 +233,14 @@ class SolrQuery(Generic[E]):
         @param fq: list of specific filters to apply.
         See https://lucene.apache.org/solr/guide/8_4/common-query-parameters.html#fq-filter-query-parameter
         @param facets: list of facets to retrieve
-        @param fuzzy:boolean triggering fuzzy search to be active or not
+        @param fuzzy: boolean triggering fuzzy search to be active or not
+        @param edismax: use solr's extended dismax query parser
+        @param bq: boost query applied on top of the entity's boost expression
+        @param sorts: list of field names to sort on, in order, taking
+        precedence over C{sort}
         @param cursor: cursor mark for deep pagination
-        @return: a pysolr.Results instance containing the search results
+        @return: the search results, carrying the built C{entities} and the
+        C{has_more} flag
         """
         if sort_order or sort:  # string to sort using sort_order
             order = sort_order or "desc"
@@ -434,6 +443,16 @@ class SolrQuery(Generic[E]):
         return new_instance
 
     def _build_instance(self, doc: dict[str, Any]) -> E:
+        """
+        Build an entity instance from a solr document.
+
+        Decodes what solr does not return as a Python value -- datetimes, JSON
+        fields and binary blobs -- with the same helpers
+        L{SolrEntity.from_json} uses, and strips the entity prefix off the id.
+
+        @param doc: one document as returned by solr, keys prefixed
+        @return: an instance of the entity class this query is bound to
+        """
         new_instance = self.class_object()
         for attribute_name, field in self.class_object._solr_fields.items():
             solr_value = doc.get(self.entity_name + "_" + field.name, None)
@@ -468,6 +487,7 @@ class SolrQuery(Generic[E]):
         @param query: solr query syntax selecting the entities to delete. It is
         passed through B{unescaped} -- it is a query, not a value -- so never
         build it by interpolating untrusted input.
+        @param commit: trigger a solr commit once the deletion is issued
         """
         self.solr_orm.indexer.delete(
             q=f"{query} AND type:{escape_solr_value(self.entity_name)}"
@@ -525,6 +545,15 @@ class SolrQuery(Generic[E]):
 
 
 class SolrAutomaticQuery(SolrQuery[E]):
+    """
+    A SolrQuery resolving its sort and boost settings from the configuration.
+
+    Everything the class attributes of L{SolrQuery} declare as a default is
+    resolved per entity when the query object is built -- from
+    C{Settings.boost} and C{Settings.default_sort} -- and stored on the
+    instance, so two entities never see each other's values.
+    """
+
     def __init__(self, class_object: type[E], solr_orm: "SolrORM") -> None:
         """
         Initialize a SolrQuery instance setting the SolrEntity class and the SolrORM instance
@@ -814,6 +843,16 @@ class SolrORM:
             )
 
     def _create_or_update_fields(self, update: bool = False) -> None:
+        """
+        Build the schema of every registered entity.
+
+        Creates what the whole collection shares -- the C{type} discriminator
+        and the C{autocomplete_text} field type -- then delegates each entity to
+        L{_create_or_update_fields_for_class}, handing it the copy field
+        directives already in the schema so they are read only once.
+
+        @param update: replace each entity's own fields rather than adding them
+        """
         if not self.indexer_schema.field_exists("type"):
             try:
                 self.indexer_schema.create_field(
@@ -1013,6 +1052,15 @@ class SolrORM:
         self.indexer_schema.delete_copy_fields(directives)
 
     def _delete_fields_for_class(self, entity_class: type[SolrEntity]) -> None:
+        """
+        Delete one entity's copy field directives, catch-all fields and fields.
+
+        In that order: solr refuses to delete a field a directive still copies
+        from. Fields it will not delete are logged and the rest are still
+        attempted.
+
+        @param entity_class: the SolrEntity subclass to remove from the schema
+        """
         fields = entity_class._solr_fields
         entity_name = entity_class.__name__.lower()
         self._delete_copy_fields_for_class(entity_name)
@@ -1032,6 +1080,13 @@ class SolrORM:
                 logger.warning("%s", e)
 
     def solr_config_update(self) -> None:
+        """
+        Register a suggester and a C{/suggest} request handler per entity.
+
+        This is the only call that talks to solr's I{config} api rather than to
+        the schema api, so it posts directly instead of going through
+        L{SolrSchemaAdmin}.
+        """
         headers = {"Content-type": "application/json"}
         params = {"commit": "true", "indent": "true"}
 

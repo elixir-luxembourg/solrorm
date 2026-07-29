@@ -97,12 +97,20 @@ class Facet:
         self.default_values = default_values or []
 
     def set_values(self, values: list[Any]) -> None:
+        """
+        Record the values selected on this facet.
+
+        @param values: the selected values, used as filters by the next search
+        """
         self.values = values
         self.using_default = False
         if values == self.default_values:
             self.using_default = True
 
     def use_default(self) -> None:
+        """
+        Select the default values, if the facet was given any.
+        """
         if self.default_values:
             self.set_values(self.default_values)
             self.using_default = True

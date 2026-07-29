@@ -31,6 +31,7 @@ class SolrField:
         - indexed: should the field be indexed by solr to allow search
         - stored: should the original field value be stored in solr to allow value retrieval
         - name: field name, can contain only alphanumeric characters and _
+        - attribute_name: name of the entity attribute, defaults to the field name
         - field_type: field type, see solr documentation for list of types, default type is string
         - multivalued: can the field contain multiple values (list)
 
@@ -233,6 +234,16 @@ class SolrJsonField(SolrField):
         multivalued: bool = False,
         model: Any | None = None,
     ) -> None:
+        """
+        @param name: solr field name
+        @param attribute_name: name of the entity attribute, defaults to C{name}
+        @param indexed: should solr index the field
+        @param stored: should solr store the original value
+        @param multivalued: can the field hold a list of values
+        @param model: class serialising each value with C{to_json()} and
+            rebuilding it with its C{from_json()} classmethod. Plain JSON-able
+            values when left unset.
+        """
         self.model = model
         super().__init__(name, attribute_name, "text_en", indexed, stored, multivalued)
 
@@ -267,6 +278,17 @@ class SolrForeignKeyField(SolrField):
         reversed_by: str | None = None,
         reversed_multiple: bool = False,
     ) -> None:
+        """
+        @param name: solr field name, holding the id of the linked entity
+        @param entity_name: lowercase name of the entity pointed at
+        @param attribute_name: name of the entity attribute, defaults to C{name}
+        @param multivalued: can the field point at several entities
+        @param reversed_by: name of the reverse accessor to install on the
+            I{target} entity, so that C{target.<reversed_by>_entities} resolves
+            the entities pointing at it
+        @param reversed_multiple: whether that reverse accessor yields a list
+            rather than a single instance
+        """
         self.linked_entity_name = entity_name
         self.reversed_by = reversed_by
         self.reversed_multiple = reversed_multiple

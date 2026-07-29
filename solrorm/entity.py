@@ -299,4 +299,9 @@ class SolrEntity:
         return new_instance
 
     def set_computed_values(self) -> None:
-        pass
+        """
+        Hook called by L{save} before the document is built.
+
+        Does nothing here: a subclass overrides it to derive fields from the
+        others, e.g. a slug from a title.
+        """

@@ -340,12 +340,12 @@ class Dataset(SolrEntity):
 
 | Module | Purpose |
 |---|---|
-| `solrorm.orm` | `SolrORM`, `SolrQuery`, `SolrAutomaticQuery`, `escape_solr_value` — Solr access + query building |
+| `solrorm.orm` | `SolrORM`, `SolrQuery`, `SolrAutomaticQuery`, `SolrResults`, `escape_solr_value` — Solr access + query building |
 | `solrorm.entity` | `SolrEntity` — base class for indexed entities |
 | `solrorm.fields` | typed field descriptors (`SolrField`, `SolrIntField`, ...) |
 | `solrorm.schema` | `SolrSchemaAdmin` — schema management |
 | `solrorm.facets` | `Facet`, `FacetRange` |
-| `solrorm.exceptions` | `SolrORMError`, `SolrQueryException` |
+| `solrorm.exceptions` | `SolrORMError`, `SolrQueryException`, `SolrEntityNotFound` |
 | `solrorm.config` | `Settings` — the library's whole configuration surface |
 
 The package ships a `py.typed` marker, so consumers type-check against its
