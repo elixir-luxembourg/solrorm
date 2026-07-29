@@ -99,10 +99,10 @@ Settings(
 
 Field names are relative to the entity and get its prefix (`dataset_keywords`);
 the one exception is `"id"`, which is the collection-wide field and is copied
-unprefixed. To index a related entity's denormalised content, list the field that
-holds it — that is all the removed `SOLR_QUERY_SEARCH_EXTENDED` /
-`SOLR_QUERY_SEARCH_EXTENDED_2_WAY_INDEX` flags ever did, minus their hardcoded
-`dataset`/`project`/`study` entity names.
+unprefixed. To make a free-text search match a *related* entity's content,
+denormalise that content into a field of your own and list it here — the library
+has no notion of which of your entities are related for search purposes, and no
+opinion on what your entities are called.
 
 Adding a field to the table is picked up by the next `create_fields()` run,
 which adds the missing copy field directives and leaves the existing ones alone.
@@ -240,6 +240,17 @@ results = Dataset.query.search(
 The returned `results.facets` keys have the entity prefix stripped, so they match
 the field names given to the facet.
 
+`query.get_facets([...])` builds the same objects from `(attribute, label)`
+tuples, skipping any attribute the entity does not declare. Add a third element
+to select values by default — the library has no opinion about which of your
+fields deserve one:
+
+```python
+facets = Dataset.query.get_facets(
+    [("keywords", "Keywords"), ("status", "Status", ["Active"])]
+)
+```
+
 ### Missing entities
 
 `get()` and `get_by_slug()` return `None` when nothing matches. solrorm is
@@ -270,9 +281,9 @@ if dataset is None:
 
 Ids, slugs and selected facet values are treated as **values**: they are
 backslash-escaped with `escape_solr_value` before being interpolated into Lucene
-syntax, so a quote, a colon or a paren in user input can no longer break the
-query or change its meaning. This includes a `FacetRange`'s selected values — to
-filter on an interval, pass the range yourself in `fq`:
+syntax, so a quote, a colon or a paren in user input cannot break the query or
+change its meaning. This includes a `FacetRange`'s selected values, which are
+literal values too — to filter on an interval, pass the range yourself in `fq`:
 
 ```python
 Dataset.query.search(query="", fq=["dataset_year:[2000 TO 2010]"])
@@ -373,8 +384,7 @@ package supports Python 3.10.
 The test suite needs no reachable Solr: `tests/conftest.py` fakes the indexer.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full workflow and the release
-steps, and [`CHANGELOG.md`](CHANGELOG.md) for what changed — including the
-migration notes for applications adopting this library.
+steps, and [`CHANGELOG.md`](CHANGELOG.md) for what each version contains.
 
 The version has a single source, `solrorm.__version__`; `pyproject.toml` reads
 it from there.

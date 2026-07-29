@@ -4,5 +4,6 @@ include CHANGELOG.md
 include CONTRIBUTING.md
 recursive-include tests *.py
 
-# The pre-1.0 working plan is not part of the distribution.
+# Internal working documents; not part of the distribution.
 exclude RELEASE_PLAN.md
+exclude MIGRATION_NOTES.md

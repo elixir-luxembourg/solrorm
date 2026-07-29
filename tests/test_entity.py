@@ -59,8 +59,8 @@ def test_two_instances_do_not_share_a_field_value(solr_orm):
 
 
 def test_each_entity_class_gets_its_own_reverse_field_registry():
-    """reversed_field used to be one dict on the base class, shared by every
-    subclass and working only because SolrORM reset it during discovery."""
+    """Each subclass gets its own mapping, so no reverse link can leak from one
+    entity class to another."""
     assert Gadget.reversed_field is not SolrEntity.reversed_field
     assert Gadget.reversed_field is not Widget.reversed_field
 
@@ -151,8 +151,7 @@ def test_from_json_round_trips_an_int(solr_orm):
 
 
 def test_from_json_round_trips_a_json_field(solr_orm):
-    """from_json used to hand back the raw json string where _build_instance
-    decoded it; both now go through the same helper."""
+    """A json field comes back decoded, not as the raw json string."""
     widget = Widget(entity_id="w-1")
     widget.notes = {"colour": "red", "sizes": [1, 2]}
     assert Widget.from_json(widget.to_dict()).notes == {
@@ -171,8 +170,8 @@ def test_from_json_round_trips_a_json_field_with_a_model(solr_orm):
 
 
 def test_to_dict_leaves_the_models_it_serialised_in_place(solr_orm):
-    """Serializing used to overwrite the entity's own list with the json it
-    produced, so the second call had nothing left to serialize."""
+    """Serializing must not overwrite the entity's own list with the json it
+    produced, or a second call would have nothing left to serialize."""
     widget = Widget(entity_id="w-1")
     widget.parts = [Part("bolt")]
 
@@ -182,7 +181,7 @@ def test_to_dict_leaves_the_models_it_serialised_in_place(solr_orm):
 
 
 def test_the_search_and_json_paths_decode_a_model_alike(solr_orm):
-    """_build_instance and from_json must agree; they used to drift."""
+    """_build_instance and from_json must decode a model identically."""
     widget = Widget(entity_id="w-1")
     widget.parts = [Part("bolt")]
     document = widget.to_dict()

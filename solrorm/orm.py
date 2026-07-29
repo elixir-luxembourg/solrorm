@@ -26,7 +26,7 @@ import base64
 import json
 import logging
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from datetime import date, datetime, timezone
 from typing import (
     Any,
@@ -377,20 +377,23 @@ class SolrQuery(Generic[E]):
         else:
             return None, None
 
-    def get_facets(self, facet_list: list[tuple[str, str]]) -> dict[str, Facet]:
+    def get_facets(
+        self, facet_list: Sequence[tuple[str, str] | tuple[str, str, list[Any]]]
+    ) -> dict[str, Facet]:
         """
         Build Facet instances from a list of attributes and facet labels
-        @param facet_list: a list containing tuples with field name and facet label
+
+        @param facet_list: one C{(attribute_name, label)} tuple per facet, with
+            an optional third element giving the values the facet is selected on
+            by default. An attribute the entity does not declare is skipped.
         @return: the Facet instances, by attribute name
         """
         facets = {}
-        for attribute_name, label in facet_list:
+        for attribute_name, label, *rest in facet_list:
             solr_field = self.class_object._solr_fields.get(attribute_name, None)
             if solr_field is not None:
-                if attribute_name == "deprecated":
-                    facets[attribute_name] = Facet(solr_field.name, label, ["Active"])
-                else:
-                    facets[attribute_name] = Facet(solr_field.name, label)
+                default_values = rest[0] if rest else None
+                facets[attribute_name] = Facet(solr_field.name, label, default_values)
         return facets
 
     def get_sort_options(self) -> tuple[list[str], list[str]]:

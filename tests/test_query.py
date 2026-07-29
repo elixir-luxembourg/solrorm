@@ -172,8 +172,7 @@ def test_selected_facet_values_are_quoted_into_a_filter_query(solr_orm, indexer)
 
 
 def test_a_range_facet_is_requested_with_its_bounds(solr_orm, indexer):
-    """Every FacetRange search used to raise TypeError: the prefixed field name
-    was passed to list.append as two arguments."""
+    """A range facet asks solr for the prefixed field name and its bounds."""
     facet = FacetRange("size", "Size", Range(0, 100, 25, other="all"))
     Widget.query.search(query="", facets=[facet])
     _q, params = indexer.last_search
@@ -195,7 +194,7 @@ def test_selected_range_facet_values_become_filter_queries(solr_orm, indexer):
 
 
 def test_a_facet_value_carrying_query_syntax_is_neutralised(solr_orm, indexer):
-    """A quote, a colon and a paren in a facet value used to leak into the
+    """A quote, a colon and a paren in a facet value must not leak into the
     filter query and change its meaning."""
     facet = Facet("title", "Title")
     facet.set_values(['a") OR type:gadget OR ("x'])
@@ -232,8 +231,8 @@ def unindexed(solr_orm, monkeypatch):
 
 
 def test_query_field_detection_falls_back_to_the_orm_default(unindexed, indexer):
-    """With no indexed field the fallback used to read a non-existent
-    SolrQuery.DEFAULT_QUERY_FIELDS and raise AttributeError."""
+    """An entity with no indexed field falls back to the ORM's default query
+    fields instead of failing."""
     assert unindexed.query.query_has_solr_query_field("trinket_title:thing") is True
     assert unindexed.query.query_has_solr_query_field("trinket_note:thing") is False
 
@@ -270,7 +269,7 @@ def test_all_ids_strips_the_entity_prefix(solr_orm, indexer):
 
 
 def test_all_ids_pages_with_a_cursor(solr_orm, indexer):
-    """It used to ask solr for a million rows in one request."""
+    """The ids are paged for, not asked for in one enormous request."""
     indexer.queue(
         solr_response([{"id": "widget_w-1"}], next_cursor="page2"),
         solr_response([{"id": "widget_w-2"}], next_cursor="page2"),
@@ -293,9 +292,8 @@ def test_the_batch_size_is_a_number(solr_orm):
 
 @pytest.mark.parametrize("rows", [0, None])
 def test_an_unlimited_search_reports_no_further_page(solr_orm, indexer, rows):
-    """``rows`` only reaches solr when truthy, so comparing the document count
-    against it used to raise TypeError on exactly the searches that ask for
-    everything."""
+    """``rows`` only reaches solr when truthy, so the document count must not be
+    compared against it on exactly the searches that ask for everything."""
     results = Widget.query.search(query="", rows=rows)
 
     assert results.has_more is False
@@ -326,7 +324,7 @@ def _automatic_queries(solr_orm, order):
 @pytest.mark.parametrize("order", [(Widget, Gadget), (Gadget, Widget)])
 def test_each_automatic_query_keeps_its_own_boost(indexer, app_config, order):
     """The settings are resolved on the instance, so the entity constructed
-    first no longer poisons the ones after it -- in either order."""
+    first cannot poison the ones after it -- in either order."""
     solr_orm = SolrORM(
         Settings.from_mapping(
             {
@@ -361,3 +359,18 @@ def test_search_sends_the_instance_boost_as_qf(solr_orm, indexer):
     gadget_query.search("anything")
     _q, params = indexer.last_search
     assert params["qf"] == "gadget_title^5 gadget_text_^1"
+
+
+def test_get_facets_builds_a_facet_per_declared_attribute(solr_orm):
+    facets = Widget.query.get_facets([("title", "Title"), ("absent", "Absent")])
+    assert list(facets) == ["title"]
+    assert facets["title"].field_name == "title"
+    assert facets["title"].label == "Title"
+    assert facets["title"].default_values == []
+
+
+def test_get_facets_takes_the_default_values_from_the_caller(solr_orm):
+    """Default selected values are the host's to name -- no attribute name gets
+    special treatment."""
+    facets = Widget.query.get_facets([("title", "Title", ["bolt"])])
+    assert facets["title"].default_values == ["bolt"]

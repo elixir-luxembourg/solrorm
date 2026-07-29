@@ -57,9 +57,9 @@ def test_field_collection_includes_the_inherited_base_fields(solr_orm):
 
 
 def test_a_subclass_can_override_an_inherited_field(solr_orm):
-    """The bases used to be walked after the class's own attributes, so
-    SolrEntity's indexed 'created' silently won over a subclass's redefinition
-    of it."""
+    """A field a subclass redeclares wins over the base class's version of it:
+    field collection walks the bases first and the subclass's own attributes
+    last."""
 
     class Gizmo(SolrEntity):
         created = SolrDateTimeField("created", indexed=False)
@@ -70,8 +70,8 @@ def test_a_subclass_can_override_an_inherited_field(solr_orm):
 
 
 def test_delete_wants_exactly_one_of_an_id_and_a_query(solr_orm, indexer):
-    """It used to null the query when both were given and pass None for both
-    when neither was, deleting nothing without saying so."""
+    """Neither argument deletes nothing and both is ambiguous, so each is a
+    ValueError rather than a silent no-op."""
     with pytest.raises(ValueError):
         solr_orm.delete()
     with pytest.raises(ValueError):
@@ -95,7 +95,7 @@ def test_the_orm_keeps_the_settings_it_was_built_with(settings):
 
 
 def test_two_orms_serve_two_collections_without_interfering(app_config):
-    """The point of T3: no module-level state, so one process can hold two."""
+    """No module-level state, so one process can hold two collections."""
     first = SolrORM(
         Settings.from_mapping(
             {**app_config, "SOLR_COLLECTION": "first", "SOLR_BOOST": {"widget": "a^2"}}
@@ -125,8 +125,8 @@ def test_two_orms_serve_two_collections_without_interfering(app_config):
 
 
 def test_entities_are_read_eagerly(app_config):
-    """The behaviour change T3 introduces: an entity registered after
-    construction is invisible, where the old reference-holding config saw it."""
+    """The registry is copied at construction, so an entity registered
+    afterwards is invisible to that ORM."""
     orm = SolrORM(Settings.from_mapping(app_config))
     app_config["entities"]["late"] = Gadget
     assert "late" not in orm.settings.entities
@@ -207,8 +207,7 @@ def test_an_entity_absent_from_the_table_falls_back_to_title(app_config, fake_sc
 def test_the_query_field_table_is_not_mutated_by_field_creation(
     app_config, fake_schema
 ):
-    """The old extended-search block worked by appending to the lists inside the
-    host's own config. Nothing in the library writes to the table any more."""
+    """The table is the host's data: nothing in the library writes to it."""
     app_config["SOLR_QUERY_TEXT_FIELD"] = {"widget": ["title"]}
     settings = Settings.from_mapping(app_config)
     solr_orm = SolrORM(settings)
@@ -233,9 +232,8 @@ def test_field_creation_builds_the_whole_schema_from_scratch(settings, fake_sche
 
 
 def test_field_creation_is_idempotent(settings, fake_schema):
-    """T10's headline fix: the catch-all fields used to be deleted and recreated
-    on every run, discarding everything indexed into them. A second run must
-    touch nothing -- no add, no delete, no duplicate copy field."""
+    """A second run must touch nothing -- no add, no delete, no duplicate copy
+    field -- so that whatever is indexed into the catch-all fields survives it."""
     SolrORM(settings).create_fields()
     schema_after_first_run = dict(fake_schema.fields)
     copy_fields_after_first_run = list(fake_schema.copy_fields)
@@ -316,8 +314,8 @@ def test_the_autocomplete_field_type_is_created_once_for_the_collection(
 
 
 def test_deletion_covers_every_registered_entity(settings, fake_schema):
-    """delete_fields used to walk __subclasses__() while creation walked the
-    entities registry; the registry is the documented contract."""
+    """Deletion walks the entities registry, like creation does: the registry is
+    the documented contract."""
     solr_orm = SolrORM(settings)
     solr_orm.create_fields()
 
