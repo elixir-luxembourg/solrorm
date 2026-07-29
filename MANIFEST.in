@@ -6,4 +6,3 @@ recursive-include tests *.py
 
 # Internal working documents; not part of the distribution.
 exclude RELEASE_PLAN.md
-exclude MIGRATION_NOTES.md
