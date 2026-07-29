@@ -1,4 +1,3 @@
-# coding=utf-8
 #  Copyright 2020 University of Luxembourg
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,41 +11,19 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-"""
- solrorm
- -------
+"""Tests for the public surface of the ``solrorm`` package itself.
 
-A lightweight Solr ORM: entity mapping, typed fields, faceting and query
-building over pysolr. Framework-neutral -- the host application injects its
-configuration via :func:`configure`.
+Users import from ``solrorm`` rather than from its modules, so the re-exports
+are part of the API and worth pinning.
 """
 
-__author__ = "Valentin Grouès"
-__version__ = "0.1.0"
+import importlib
 
-from .config import config, configure
-from .entity import SolrEntity
-from .exceptions import SolrORMError, SolrQueryException
-from .facets import Facet, FacetRange, Range
-from .fields import (
-    SolrBinaryField,
-    SolrBooleanField,
-    SolrCaseInsensitiveStringField,
-    SolrDateTimeField,
-    SolrField,
-    SolrFloatField,
-    SolrForeignKeyField,
-    SolrIntField,
-    SolrJsonField,
-    SolrLongField,
-    SolrTextField,
-)
-from .orm import SolrAutomaticQuery, SolrORM, SolrQuery
-from .schema import SolrSchemaAdmin
+import pytest
 
-__all__ = [
-    "config",
-    "configure",
+import solrorm
+
+PUBLIC_NAMES = [
     "Facet",
     "FacetRange",
     "Range",
@@ -68,4 +45,24 @@ __all__ = [
     "SolrQueryException",
     "SolrSchemaAdmin",
     "SolrTextField",
+    "config",
+    "configure",
 ]
+
+
+@pytest.mark.parametrize("name", PUBLIC_NAMES)
+def test_the_name_is_reachable_from_the_package_root(name):
+    assert getattr(solrorm, name) is not None
+    assert name in solrorm.__all__
+
+
+def test_all_lists_nothing_that_is_missing():
+    for name in solrorm.__all__:
+        assert hasattr(solrorm, name), name
+
+
+@pytest.mark.parametrize(
+    "module", ["entity", "fields", "orm", "schema", "facets", "config", "exceptions"]
+)
+def test_the_renamed_modules_are_importable(module):
+    assert importlib.import_module(f"solrorm.{module}") is not None

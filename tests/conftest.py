@@ -26,9 +26,9 @@ import pysolr
 import pytest
 
 import solrorm
-from solrorm.solr_orm import SolrORM
-from solrorm.solr_orm_entity import SolrEntity
-from solrorm.solr_orm_fields import (
+from solrorm.orm import SolrORM
+from solrorm.entity import SolrEntity
+from solrorm.fields import (
     SolrBinaryField,
     SolrDateTimeField,
     SolrField,

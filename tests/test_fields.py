@@ -20,7 +20,7 @@ one silently invalidates an existing index, so it is pinned here.
 
 import pytest
 
-from solrorm.solr_orm_fields import (
+from solrorm.fields import (
     SolrBinaryField,
     SolrBooleanField,
     SolrCaseInsensitiveStringField,

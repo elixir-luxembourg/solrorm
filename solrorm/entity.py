@@ -12,8 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 """
- solrorm.solr_orm_entity
- -------------------
+ solrorm.entity
+ --------------
 
 Module containing the SolrEntity class
 
@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, Any
 
-from .solr_orm_fields import (
+from .fields import (
     SolrDateTimeField,
     SolrField,
     SolrIntField,

@@ -17,19 +17,18 @@ import pytest
 from pysolr import SolrError as PysolrError
 
 import solrorm
-from solrorm.exceptions import SolrError, SolrQueryException
+from solrorm.exceptions import SolrORMError, SolrQueryException
 
 from .conftest import Widget
 
 
-def test_every_error_is_catchable_as_solr_error():
-    """Hosts should be able to catch one base class."""
-    assert issubclass(SolrQueryException, SolrError)
-    assert issubclass(SolrError, Exception)
+def test_every_error_is_catchable_as_one_base_class():
+    assert issubclass(SolrQueryException, SolrORMError)
+    assert issubclass(SolrORMError, Exception)
 
 
 def test_the_errors_are_exported_from_the_package_root():
-    assert solrorm.SolrError is SolrError
+    assert solrorm.SolrORMError is SolrORMError
     assert solrorm.SolrQueryException is SolrQueryException
 
 
@@ -44,6 +43,7 @@ def test_a_pysolr_failure_during_search_is_rewrapped(solr_orm, indexer, monkeypa
         Widget.query.search(query="cancer")
 
 
-def test_our_error_is_distinct_from_pysolrs_despite_the_shared_name(solr_orm):
-    """Both are called SolrError, which T2 of RELEASE_PLAN.md disambiguates."""
-    assert SolrError is not PysolrError
+def test_our_error_does_not_share_pysolrs_name(solr_orm):
+    """pysolr exports a SolrError of its own, so ours is named SolrORMError."""
+    assert SolrORMError is not PysolrError
+    assert not hasattr(solrorm, "SolrError")

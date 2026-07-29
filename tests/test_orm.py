@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from solrorm.solr_orm import SolrQuery, _encode_solr_json_value, _SOLR_JSON_ENCODER
+from solrorm.orm import SolrQuery, _encode_solr_json_value, _SOLR_JSON_ENCODER
 
 from .conftest import Gadget, Widget
 

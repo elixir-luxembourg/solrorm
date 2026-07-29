@@ -22,13 +22,13 @@ Exceptions raised by the Solr ORM.
 __author__ = "Valentin Grouès"
 
 
-class SolrError(Exception):
+class SolrORMError(Exception):
     """Base class for all solrorm errors."""
 
     pass
 
 
-class SolrQueryException(SolrError):
+class SolrQueryException(SolrORMError):
     """Raised when a Solr query fails."""
 
     pass

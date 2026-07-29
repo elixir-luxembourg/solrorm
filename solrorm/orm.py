@@ -15,8 +15,8 @@
 #  limitations under the License.
 
 """
- solrorm.solr_orm
- -------------------
+ solrorm.orm
+ -----------
 
 Module containing the following classes:
   - SolrORM: update and create solr fields using the solr api
@@ -35,19 +35,20 @@ from typing import Type, Dict, List, Tuple, Optional, Union, Iterable
 import pysolr
 import requests
 from flask import Response
-from pysolr import Solr, SolrError
+from pysolr import Solr
+from pysolr import SolrError as PysolrError
 from requests import HTTPError
 from werkzeug.exceptions import abort
 
 from .facets import Facet, FacetRange
-from .solr_orm_entity import DATETIME_FORMAT, DATETIME_FORMAT_NO_MICRO, SolrEntity
-from .solr_orm_fields import (
+from .entity import DATETIME_FORMAT, DATETIME_FORMAT_NO_MICRO, SolrEntity
+from .fields import (
     SolrField,
     SolrForeignKeyField,
     SolrJsonField,
     SolrBinaryField,
 )
-from .solr_orm_schema import SolrSchemaAdmin
+from .schema import SolrSchemaAdmin
 from . import config
 from .exceptions import SolrQueryException
 
@@ -304,7 +305,7 @@ class SolrQuery(object):
                     start_index = len(self.entity_name + "_")
                     new_facets_fields[field_name[start_index:]] = facet_value
                 results.facets["facet_fields"] = new_facets_fields
-        except SolrError as e:
+        except PysolrError as e:
             raise SolrQueryException(e)
         return results
 

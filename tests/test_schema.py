@@ -21,8 +21,8 @@ the indexer.
 import pytest
 from requests import HTTPError
 
-from solrorm import solr_orm_schema
-from solrorm.solr_orm_schema import SolrSchemaAdmin, _solr_error
+from solrorm import schema as schema_module
+from solrorm.schema import SolrSchemaAdmin, _solr_error
 
 SCHEMA_URL = "http://solr.invalid:8983/solr/test_collection/schema"
 
@@ -64,7 +64,7 @@ class Posts:
 @pytest.fixture
 def posts(monkeypatch):
     captured = Posts()
-    monkeypatch.setattr(solr_orm_schema.requests, "post", captured.record)
+    monkeypatch.setattr(schema_module.requests, "post", captured.record)
     return captured
 
 

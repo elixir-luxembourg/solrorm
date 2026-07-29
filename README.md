@@ -57,9 +57,13 @@ remain visible.
 Declare entities as `SolrEntity` subclasses with typed field descriptors:
 
 ```python
-from solrorm.solr_orm_entity import SolrEntity
-from solrorm.solr_orm import SolrAutomaticQuery
-from solrorm.solr_orm_fields import SolrField, SolrIntField, SolrDateTimeField
+from solrorm import (
+    SolrAutomaticQuery,
+    SolrDateTimeField,
+    SolrEntity,
+    SolrField,
+    SolrIntField,
+)
 
 
 class Dataset(SolrEntity):
@@ -75,7 +79,7 @@ class Dataset(SolrEntity):
 Then wire the ORM and the entity registry, in this order:
 
 ```python
-from solrorm.solr_orm import SolrORM
+from solrorm import SolrORM
 
 app.config["entities"] = {"dataset": Dataset}
 app.config["_solr_orm"] = SolrORM(
@@ -113,13 +117,17 @@ for dataset in Dataset.query.all():
 
 | Module | Purpose |
 |---|---|
-| `solrorm.solr_orm` | `SolrORM`, `SolrQuery`, `SolrAutomaticQuery` — Solr access + query building |
-| `solrorm.solr_orm_entity` | `SolrEntity` — base class for indexed entities |
-| `solrorm.solr_orm_fields` | typed field descriptors (`SolrField`, `SolrIntField`, ...) |
-| `solrorm.solr_orm_schema` | `SolrSchemaAdmin` — schema management |
+| `solrorm.orm` | `SolrORM`, `SolrQuery`, `SolrAutomaticQuery` — Solr access + query building |
+| `solrorm.entity` | `SolrEntity` — base class for indexed entities |
+| `solrorm.fields` | typed field descriptors (`SolrField`, `SolrIntField`, ...) |
+| `solrorm.schema` | `SolrSchemaAdmin` — schema management |
 | `solrorm.facets` | `Facet`, `FacetRange` |
-| `solrorm.exceptions` | `SolrError`, `SolrQueryException` |
+| `solrorm.exceptions` | `SolrORMError`, `SolrQueryException` |
 | `solrorm.config` | `configure()` + the config accessor |
+
+Every public name above is re-exported from the `solrorm` package itself, so
+`from solrorm import SolrField` works and no code needs to depend on the module
+layout.
 
 ## Development
 
@@ -132,7 +140,7 @@ uv run ty check
 
 ## Known tech debt
 
-- `solr_orm.py` still imports `flask.Response` and `werkzeug.exceptions.abort`,
+- `orm.py` still imports `flask.Response` and `werkzeug.exceptions.abort`,
   so `Flask`/`werkzeug` remain runtime dependencies. Removing these would make
   the library fully framework-neutral.
 - The library has no test suite of its own yet; the ORM is currently covered by

@@ -13,8 +13,8 @@
 #  limitations under the License.
 
 """
- solrorm.solr_orm_schema
- -------------------
+ solrorm.schema
+ --------------
 
 Module containing the SolrSchemaAdmin class
 
