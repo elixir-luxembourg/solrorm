@@ -18,13 +18,13 @@
 
 A lightweight Solr ORM: entity mapping, typed fields, faceting and query
 building over pysolr. Framework-neutral -- the host application injects its
-configuration via :func:`configure`.
+configuration by handing a :class:`Settings` instance to :class:`SolrORM`.
 """
 
 __author__ = "Valentin Grouès"
 __version__ = "0.1.0"
 
-from .config import config, configure
+from .config import Settings
 from .entity import SolrEntity
 from .exceptions import SolrORMError, SolrQueryException
 from .facets import Facet, FacetRange, Range
@@ -45,11 +45,10 @@ from .orm import SolrAutomaticQuery, SolrORM, SolrQuery
 from .schema import SolrSchemaAdmin
 
 __all__ = [
-    "config",
-    "configure",
     "Facet",
     "FacetRange",
     "Range",
+    "Settings",
     "SolrAutomaticQuery",
     "SolrBinaryField",
     "SolrBooleanField",

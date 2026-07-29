@@ -31,26 +31,47 @@ Requires Python ≥ 3.10 and a reachable Solr ≥ 8.2.
 
 ## Design
 
-`solrorm` does not own a web application. The host application injects its
-configuration once at startup:
+`solrorm` does not own a web application. Every setting the library reads lives
+on a `Settings` object handed to `SolrORM` at construction time, so no
+module-level state is involved and one process can serve two collections:
 
 ```python
-import solrorm
-from flask import Flask
+from solrorm import Settings, SolrORM
 
-app = Flask(__name__)
-app.config.update(
-    SOLR_ENDPOINT="http://localhost:8983/solr",
-    SOLR_COLLECTION="my_collection",
-    entities={...},  # {name: SolrEntity subclass}
+solr_orm = SolrORM(
+    Settings(
+        endpoint="http://localhost:8983/solr",
+        collection="my_collection",
+        entities={"dataset": Dataset},  # {name: SolrEntity subclass}
+    )
 )
-solrorm.configure(app.config)  # store a reference to the config mapping
 ```
 
-The ORM reads the values it needs (`SOLR_*`, the `entities` registry, ...)
-through `solrorm.config`. Because a *reference* is stored, entries added after
-`configure()` — such as the `entities` registry and the `_solr_orm` instance —
-remain visible.
+A host that already keeps its configuration in a mapping (Flask's `app.config`,
+say) builds the same object with `Settings.from_mapping`, which reads the
+`SOLR_*` keys listed below:
+
+```python
+solr_orm = SolrORM(Settings.from_mapping(app.config))
+```
+
+Settings are read **eagerly**: `entities` is copied at construction, so the
+registry must be complete before `SolrORM(...)` runs.
+
+### Settings
+
+| Setting | `from_mapping` key | Type | Default |
+|---|---|---|---|
+| `endpoint` | `SOLR_ENDPOINT` | `str` | required |
+| `collection` | `SOLR_COLLECTION` | `str` | required |
+| `entities` | `entities` | `dict[str, type[SolrEntity]]` | `{}` |
+| `fuzzy_search_level` | `FUZZY_SEARCH_LEVEL` | `int` | `4` |
+| `use_cursor_pagination` | `USE_CURSOR_PAGINATION` | `bool` | `False` |
+| `boost` | `SOLR_BOOST` | `dict[str, str]` — per entity, the `qf` expression | `{}` |
+| `default_sort` | `SOLR_DEFAULT_SORT` | `dict[str, str]` — per entity, the field to sort on | `{}` |
+| `query_text_field` | `SOLR_QUERY_TEXT_FIELD` | `dict[str, list[str]]` — per entity, the fields copied into `_text_` | `{}` |
+
+`Settings` is a frozen dataclass: build a new one rather than mutating it.
 
 ## Usage
 
@@ -79,25 +100,22 @@ class Dataset(SolrEntity):
 Then wire the ORM and the entity registry, in this order:
 
 ```python
-from solrorm import SolrORM
+from solrorm import Settings, SolrORM
 
 app.config["entities"] = {"dataset": Dataset}
-app.config["_solr_orm"] = SolrORM(
-    app.config["SOLR_ENDPOINT"], app.config["SOLR_COLLECTION"]
-)
+solr_orm = SolrORM(Settings.from_mapping(app.config))
 ```
 
 Instantiating `SolrORM` walks the `SolrEntity` subclasses and attaches to each
 of them a `query` object — an instance of the class named in the entity's
 `query_class` attribute, or `SolrQuery` if it has none — plus the ORM itself.
-Entity classes must therefore be imported before `SolrORM(...)` runs, and
-concrete models must subclass `SolrEntity` *directly* for the discovery to see
-them.
+Entity classes must therefore be imported, and `settings.entities` populated,
+before `SolrORM(...)` runs; concrete models must subclass `SolrEntity`
+*directly* for the discovery to see them.
 
 Manage the schema and index documents:
 
 ```python
-solr_orm = app.config["_solr_orm"]
 solr_orm.create_fields()  # create the Solr fields for all entities
 solr_orm.update_fields()  # push field changes
 Dataset(entity_id="ds-1").save(commit=True)
@@ -123,7 +141,7 @@ for dataset in Dataset.query.all():
 | `solrorm.schema` | `SolrSchemaAdmin` — schema management |
 | `solrorm.facets` | `Facet`, `FacetRange` |
 | `solrorm.exceptions` | `SolrORMError`, `SolrQueryException` |
-| `solrorm.config` | `configure()` + the config accessor |
+| `solrorm.config` | `Settings` — the library's whole configuration surface |
 
 Every public name above is re-exported from the `solrorm` package itself, so
 `from solrorm import SolrField` works and no code needs to depend on the module
@@ -135,16 +153,17 @@ layout.
 uv sync --all-groups
 uv run ruff check .
 uv run ruff format .
+uv run pytest
 uv run ty check
 ```
+
+The test suite needs no reachable Solr: `tests/conftest.py` fakes the indexer.
 
 ## Known tech debt
 
 - `orm.py` still imports `flask.Response` and `werkzeug.exceptions.abort`,
   so `Flask`/`werkzeug` remain runtime dependencies. Removing these would make
   the library fully framework-neutral.
-- The library has no test suite of its own yet; the ORM is currently covered by
-  the tests of the consuming applications.
 
 ## License
 

@@ -33,7 +33,6 @@ from .fields import (
     SolrJsonField,
     SolrBinaryField,
 )
-from . import config
 
 logger = logging.getLogger(__name__)
 # datetime formats for json serialization
@@ -56,7 +55,9 @@ class SolrEntity:
     # dict holding reverse foreign keys references
     reversed_field = {}
     query = None
-    _solr_orm = None
+    # the SolrORM that discovered this class; set by SolrORM.__init__, and the
+    # entity's only route to the settings it was configured with
+    _solr_orm: Any = None
     ADD_PREFIX_ID = True
 
     def __init__(self, entity_id: Optional[str] = None) -> None:
@@ -102,7 +103,8 @@ class SolrEntity:
                     field_name,
                     field_reversed_multiple,
                 ) = self.reversed_field[prefix]
-                source_entity_class = config.get("entities").get(source_entity_name)
+                entities = self._solr_orm.settings.entities
+                source_entity_class = entities.get(source_entity_name)
                 holding_entities = source_entity_class.query.search_holding_entities(
                     field_name=field_name,
                     target_entity_id=self.id,
@@ -118,7 +120,9 @@ class SolrEntity:
                 if entities_ids:
                     # get foreign entity type
                     linked_entity_name = self._solr_fields[prefix].linked_entity_name
-                    linked_entity_class = config["entities"][linked_entity_name]
+                    linked_entity_class = self._solr_orm.settings.entities[
+                        linked_entity_name
+                    ]
                     for entity_id in entities_ids:
                         linked_entity = linked_entity_class.query.get(entity_id)
                         if linked_entity is not None:
@@ -147,7 +151,9 @@ class SolrEntity:
             field_value = getattr(self, field_name, None)
             if field_value and self.id:
                 # get linked entity     from solr
-                source_entity_class = config["entities"].get(source_entity_class_name)
+                source_entity_class = self._solr_orm.settings.entities.get(
+                    source_entity_class_name
+                )
                 source_entity = source_entity_class.query.get(field_value)
                 if source_entity:
                     entities = getattr(source_entity, reversed_field_name, []) or []

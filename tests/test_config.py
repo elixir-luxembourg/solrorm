@@ -11,34 +11,87 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-"""Tests for the configuration accessor."""
+"""Tests for the Settings object."""
+
+import dataclasses
+import types
 
 import pytest
 
 import solrorm
+from solrorm.config import Settings
+
+from .conftest import SOLR_COLLECTION, SOLR_ENDPOINT
 
 
-def test_get_returns_the_default_when_absent():
-    assert solrorm.config.get("MISSING") is None
-    assert solrorm.config.get("MISSING", 4) == 4
+def test_the_defaults_cover_every_optional_setting():
+    settings = Settings(endpoint=SOLR_ENDPOINT, collection=SOLR_COLLECTION)
+    assert settings.entities == {}
+    assert settings.fuzzy_search_level == 4
+    assert settings.use_cursor_pagination is False
+    assert settings.boost == {}
+    assert settings.default_sort == {}
+    assert settings.query_text_field == {}
 
 
-def test_lookup_and_membership(configured):
-    assert solrorm.config["SOLR_COLLECTION"] == "test_collection"
-    assert "entities" in solrorm.config
-    assert "MISSING" not in solrorm.config
+def test_settings_are_frozen():
+    settings = Settings(endpoint=SOLR_ENDPOINT, collection=SOLR_COLLECTION)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        settings.collection = "other"
+
+
+def test_each_instance_gets_its_own_mutable_defaults():
+    """A shared default dict would leak one host's entities into another's."""
+    first = Settings(endpoint=SOLR_ENDPOINT, collection="a")
+    second = Settings(endpoint=SOLR_ENDPOINT, collection="b")
+    first.entities["widget"] = object()
+    assert second.entities == {}
+
+
+def test_from_mapping_round_trips_every_key():
+    entities = {"widget": object()}
+    mapping = {
+        "SOLR_ENDPOINT": SOLR_ENDPOINT,
+        "SOLR_COLLECTION": SOLR_COLLECTION,
+        "entities": entities,
+        "FUZZY_SEARCH_LEVEL": 2,
+        "USE_CURSOR_PAGINATION": True,
+        "SOLR_BOOST": {"widget": "widget_title^5"},
+        "SOLR_DEFAULT_SORT": {"widget": "size"},
+        "SOLR_QUERY_TEXT_FIELD": {"widget": ["title", "tags"]},
+    }
+    settings = Settings.from_mapping(mapping)
+    assert settings.endpoint == SOLR_ENDPOINT
+    assert settings.collection == SOLR_COLLECTION
+    assert settings.entities == entities
+    assert settings.fuzzy_search_level == 2
+    assert settings.use_cursor_pagination is True
+    assert settings.boost == {"widget": "widget_title^5"}
+    assert settings.default_sort == {"widget": "size"}
+    assert settings.query_text_field == {"widget": ["title", "tags"]}
+
+
+def test_from_mapping_leaves_absent_keys_at_their_default(app_config):
+    settings = Settings.from_mapping(app_config)
+    assert settings.fuzzy_search_level == 4
+    assert settings.boost == {}
+
+
+def test_from_mapping_requires_the_endpoint_and_the_collection():
     with pytest.raises(KeyError):
-        solrorm.config["MISSING"]
+        Settings.from_mapping({"SOLR_COLLECTION": SOLR_COLLECTION})
+    with pytest.raises(KeyError):
+        Settings.from_mapping({"SOLR_ENDPOINT": SOLR_ENDPOINT})
 
 
-def test_a_reference_is_stored_not_a_copy(configured):
-    """
-    Values the host sets after configure() must stay visible.
+def test_from_mapping_ignores_keys_it_does_not_know(app_config):
+    app_config["SOMETHING_ELSE"] = "ignored"
+    assert Settings.from_mapping(app_config).collection == SOLR_COLLECTION
 
-    This is what lets an application register its ``entities`` registry after
-    calling configure(). T3 replaces this with an eagerly-read Settings object,
-    at which point this test documents the *old* contract and should be
-    replaced rather than kept passing.
-    """
-    configured["ADDED_LATER"] = "visible"
-    assert solrorm.config.get("ADDED_LATER") == "visible"
+
+def test_the_global_config_singleton_is_gone():
+    """T3 removed ``solrorm.configure`` and the module-level accessor it fed;
+    ``solrorm.config`` is now only the module holding Settings."""
+    assert not hasattr(solrorm, "configure")
+    assert isinstance(solrorm.config, types.ModuleType)
+    assert not hasattr(solrorm.config, "config")

@@ -22,6 +22,7 @@ import pytest
 from requests import HTTPError
 
 from solrorm import schema as schema_module
+from solrorm.config import Settings
 from solrorm.schema import SolrSchemaAdmin, _solr_error
 
 SCHEMA_URL = "http://solr.invalid:8983/solr/test_collection/schema"
@@ -69,8 +70,8 @@ def posts(monkeypatch):
 
 
 @pytest.fixture
-def admin(configured):
-    return SolrSchemaAdmin(SCHEMA_URL)
+def admin(settings):
+    return SolrSchemaAdmin(SCHEMA_URL, settings)
 
 
 def test_create_field_posts_the_add_field_directive(admin, posts):
@@ -159,38 +160,38 @@ def test_the_query_field_defaults_are_currently_hardcoded(admin):
     }
 
 
-def test_extended_search_mutates_the_hosts_own_config(configured):
+def test_extended_search_mutates_the_hosts_own_config(app_config):
     """
     Pins the side effect T9 removes.
 
     ``solr_query_fields`` is never read by the library; the extended-search
-    feature works only because these appends mutate the list objects inside the
-    host's config mapping, which SolrORM later reads back.
+    feature works only because these appends mutate the list objects the host
+    passed in, which SolrORM later reads back through its settings.
     """
-    configured["SOLR_QUERY_TEXT_FIELD"] = {
+    app_config["SOLR_QUERY_TEXT_FIELD"] = {
         "dataset": ["title"],
         "project": ["title"],
         "study": ["title"],
     }
-    configured["SOLR_QUERY_SEARCH_EXTENDED"] = True
-    SolrSchemaAdmin(SCHEMA_URL)
-    assert configured["SOLR_QUERY_TEXT_FIELD"]["project"] == [
+    app_config["SOLR_QUERY_SEARCH_EXTENDED"] = True
+    SolrSchemaAdmin(SCHEMA_URL, Settings.from_mapping(app_config))
+    assert app_config["SOLR_QUERY_TEXT_FIELD"]["project"] == [
         "title",
         "datasets_metadata",
         "studies_metadata",
     ]
-    assert configured["SOLR_QUERY_TEXT_FIELD"]["study"] == [
+    assert app_config["SOLR_QUERY_TEXT_FIELD"]["study"] == [
         "title",
         "datasets_metadata",
     ]
 
 
-def test_extended_search_breaks_on_an_unknown_entity_set(configured):
+def test_extended_search_breaks_on_an_unknown_entity_set(app_config):
     """
     Pins the crash T9 fixes: a host whose entities are not dataset/project/study
     cannot enable extended search at all.
     """
-    configured["SOLR_QUERY_TEXT_FIELD"] = {"widget": ["title"]}
-    configured["SOLR_QUERY_SEARCH_EXTENDED"] = True
+    app_config["SOLR_QUERY_TEXT_FIELD"] = {"widget": ["title"]}
+    app_config["SOLR_QUERY_SEARCH_EXTENDED"] = True
     with pytest.raises(TypeError):
-        SolrSchemaAdmin(SCHEMA_URL)
+        SolrSchemaAdmin(SCHEMA_URL, Settings.from_mapping(app_config))

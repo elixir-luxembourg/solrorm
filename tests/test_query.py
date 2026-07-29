@@ -14,7 +14,9 @@
 """Tests for SolrQuery: what it sends to Solr and what it builds from the
 response."""
 
+from solrorm.config import Settings
 from solrorm.facets import Facet
+from solrorm.orm import SolrORM
 
 from .conftest import Widget, solr_response
 
@@ -98,16 +100,17 @@ def test_sorting_defaults_to_score_when_no_field_is_given(solr_orm, indexer):
     assert params["sort"] == "score desc"
 
 
-def test_a_fuzzy_search_adds_the_configured_tolerance(solr_orm, indexer, configured):
-    configured["FUZZY_SEARCH_LEVEL"] = 2
+def test_a_fuzzy_search_adds_the_configured_tolerance(app_config, indexer):
+    app_config["FUZZY_SEARCH_LEVEL"] = 2
+    orm = SolrORM(Settings.from_mapping(app_config))
+    orm.indexer = indexer
     Widget.query.search(query="cancer", fuzzy=True)
     q, _params = indexer.last_search
     assert q == "(widget_text_:'cancer' OR widget_textfuzzy_:cancer~2)"
 
 
 def test_the_fuzzy_tolerance_defaults_to_four(solr_orm, indexer):
-    """Read lazily rather than at import time, so host config injected after
-    import still applies."""
+    """The tolerance comes from the settings of the ORM issuing the query."""
     Widget.query.search(query="cancer", fuzzy=True)
     q, _params = indexer.last_search
     assert "cancer~4" in q

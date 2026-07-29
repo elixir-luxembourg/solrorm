@@ -25,7 +25,7 @@ from collections import deque
 import pysolr
 import pytest
 
-import solrorm
+from solrorm.config import Settings
 from solrorm.orm import SolrORM
 from solrorm.entity import SolrEntity
 from solrorm.fields import (
@@ -130,23 +130,9 @@ class Widget(SolrEntity):
 ENTITIES = {"widget": Widget, "gadget": Gadget}
 
 
-@pytest.fixture(autouse=True)
-def _isolated_config():
-    """
-    Reset the module-level config singleton around every test.
-
-    ``solrorm.config`` is global mutable state, so without this the suite
-    becomes order-dependent. T3 of RELEASE_PLAN.md replaces the singleton with
-    a Settings object and makes this fixture unnecessary.
-    """
-    solrorm.config.configure({})
-    yield
-    solrorm.config.configure({})
-
-
 @pytest.fixture
 def app_config():
-    """The mapping a host application would hand to solrorm.configure."""
+    """The mapping a host application would hand to Settings.from_mapping."""
     return {
         "SOLR_ENDPOINT": SOLR_ENDPOINT,
         "SOLR_COLLECTION": SOLR_COLLECTION,
@@ -155,10 +141,10 @@ def app_config():
 
 
 @pytest.fixture
-def configured(app_config):
-    """Point solrorm at app_config and hand it back for mutation."""
-    solrorm.configure(app_config)
-    return app_config
+def settings(app_config):
+    """Settings for the test entities. No global state is involved, so nothing
+    needs resetting between tests."""
+    return Settings.from_mapping(app_config)
 
 
 @pytest.fixture
@@ -167,7 +153,7 @@ def indexer():
 
 
 @pytest.fixture
-def solr_orm(configured, indexer):
+def solr_orm(settings, indexer):
     """
     A SolrORM whose indexer is faked.
 
@@ -175,6 +161,6 @@ def solr_orm(configured, indexer):
     ``_solr_fields`` to every SolrEntity subclass -- so entity-level tests need
     this fixture even when they never touch the indexer.
     """
-    orm = SolrORM(SOLR_ENDPOINT, SOLR_COLLECTION)
+    orm = SolrORM(settings)
     orm.indexer = indexer
     return orm

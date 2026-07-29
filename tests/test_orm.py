@@ -18,7 +18,13 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from solrorm.orm import SolrQuery, _encode_solr_json_value, _SOLR_JSON_ENCODER
+from solrorm.config import Settings
+from solrorm.orm import (
+    SolrORM,
+    SolrQuery,
+    _encode_solr_json_value,
+    _SOLR_JSON_ENCODER,
+)
 
 from .conftest import Gadget, Widget
 
@@ -48,6 +54,52 @@ def test_field_collection_includes_the_inherited_base_fields(solr_orm):
 
 def test_the_schema_url_is_built_from_endpoint_and_collection(solr_orm):
     assert solr_orm.indexer_schema.url.endswith("/test_collection/schema")
+
+
+def test_the_orm_keeps_the_settings_it_was_built_with(settings):
+    orm = SolrORM(settings)
+    assert orm.settings is settings
+    assert orm.url == settings.endpoint
+    assert orm.collection == settings.collection
+    assert orm.indexer_schema.settings is settings
+
+
+def test_two_orms_serve_two_collections_without_interfering(app_config):
+    """The point of T3: no module-level state, so one process can hold two."""
+    first = SolrORM(
+        Settings.from_mapping(
+            {**app_config, "SOLR_COLLECTION": "first", "SOLR_BOOST": {"widget": "a^2"}}
+        )
+    )
+    second = SolrORM(
+        Settings.from_mapping(
+            {
+                **app_config,
+                "SOLR_COLLECTION": "second",
+                "SOLR_BOOST": {"widget": "b^3"},
+                "USE_CURSOR_PAGINATION": True,
+            }
+        )
+    )
+    assert first.collection == "first"
+    assert second.collection == "second"
+    assert first.settings.boost == {"widget": "a^2"}
+    assert second.settings.boost == {"widget": "b^3"}
+    assert first.indexer.url.endswith("/first")
+    assert second.indexer.url.endswith("/second")
+    assert first.indexer_schema.url.endswith("/first/schema")
+    assert second.indexer_schema.url.endswith("/second/schema")
+    # per-instance, so the second construction does not reconfigure the first
+    assert SolrQuery(Widget, first).cursor_enabled is False
+    assert SolrQuery(Widget, second).cursor_enabled is True
+
+
+def test_entities_are_read_eagerly(app_config):
+    """The behaviour change T3 introduces: an entity registered after
+    construction is invisible, where the old reference-holding config saw it."""
+    orm = SolrORM(Settings.from_mapping(app_config))
+    app_config["entities"]["late"] = Gadget
+    assert "late" not in orm.settings.entities
 
 
 def test_a_naive_datetime_is_encoded_as_utc():

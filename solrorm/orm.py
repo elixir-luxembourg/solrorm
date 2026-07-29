@@ -49,22 +49,17 @@ from .fields import (
     SolrBinaryField,
 )
 from .schema import SolrSchemaAdmin
-from . import config
+from .config import Settings
 from .exceptions import SolrQueryException
 
-# suffix added to the query string enable fuzzy search
-# fuzzy search tolerance can be configured with FUZZY_SEARCH_LEVEL config parameter
-# default is 4
 
+def fuzzy_search_suffix(settings: Settings) -> str:
+    """Suffix appended to a query term to enable fuzzy search.
 
-def fuzzy_search_suffix() -> str:
-    """Suffix appended to enable fuzzy search.
-
-    Read lazily (not at import time) so that the value reflects the host
-    configuration injected via ``solrorm.configure`` regardless of import
-    ordering.
+    @param settings: the configuration of the ORM issuing the query
+    @return: the solr fuzziness suffix, e.g. C{~4}
     """
-    return "~{}".format(config.get("FUZZY_SEARCH_LEVEL", 4))
+    return "~{}".format(settings.fuzzy_search_level)
 
 
 BATCH_SIZE = "500"
@@ -99,7 +94,7 @@ class SolrQuery(object):
         self.class_object = class_object
         self.entity_name = class_object.__name__.lower()
         self.solr_orm = solr_orm
-        self.cursor_enabled = config.get("USE_CURSOR_PAGINATION", False)
+        self.cursor_enabled = solr_orm.settings.use_cursor_pagination
 
     def query_has_solr_query_field(self, query: str) -> bool:
         """
@@ -221,7 +216,9 @@ class SolrQuery(object):
             else:
                 if fuzzy:
                     fuzzy_terms = "OR {}_textfuzzy_:{}{}".format(
-                        self.entity_name, query, fuzzy_search_suffix()
+                        self.entity_name,
+                        query,
+                        fuzzy_search_suffix(self.solr_orm.settings),
                     )
                     query = "({}_text_:'{}' {})".format(
                         self.entity_name, query, fuzzy_terms
@@ -508,14 +505,14 @@ class SolrAutomaticQuery(SolrQuery):
             self.__class__.SORT_LABELS = ["title", "id"]
         # allows giving more weight to some fields than others for default search
         if not self.__class__.BOOST:
-            boosts = config.get("SOLR_BOOST", {})
+            boosts = solr_orm.settings.boost
             boost = boosts.get(self.entity_name)
             self.__class__.BOOST = (
                 boost or f"{self.entity_name}_title^5 {self.entity_name}_text_^1"
             )
         # default sort option
         if not self.__class__.DEFAULT_SORT:
-            default_sorts = config.get("SOLR_DEFAULT_SORT", {})
+            default_sorts = solr_orm.settings.default_sort
             default_sort = default_sorts.get(self.entity_name)
             self.__class__.DEFAULT_SORT = default_sort or "title"
 
@@ -542,17 +539,23 @@ class SolrORM(object):
     # default field to use for default search
     DEFAULT_QUERY_FIELDS = ["title"]
 
-    def __init__(self, url: str, collection: str) -> None:
+    def __init__(self, settings: Settings) -> None:
         """
-        Initialize a SolrORM instance with the solr url and solr collection to use
-        @param url: hostname and port of a solr instance
-        @param collection: solr core
+        Initialize a SolrORM instance from a Settings object.
+
+        The settings are read eagerly, so ``settings.entities`` must already
+        list every entity the ORM should know about.
+
+        @param settings: the configuration to serve this collection with
         """
+        self.settings = settings
+        url = settings.endpoint
+        collection = settings.collection
         self.url = url
         self.collection = collection
         self.indexer = Solr("{}/{}".format(url, collection), encoder=_SOLR_JSON_ENCODER)
         self.indexer_schema = SolrSchemaAdmin(
-            "{}/{}/schema".format(self.url, collection)
+            "{}/{}/schema".format(self.url, collection), settings
         )
         logger.info(
             "Initializing SolrORM with solr url %s and collection %s", url, collection
@@ -573,7 +576,7 @@ class SolrORM(object):
                 # we record of solrforeignkeyfield having reversed_by attributes in the target entity
                 if isinstance(field, SolrForeignKeyField) and field.reversed_by:
                     reversed_attributes = field.reversed_by
-                    target_entity_class = config["entities"].get(
+                    target_entity_class = self.settings.entities.get(
                         field.linked_entity_name
                     )
                     if target_entity_class:
@@ -602,7 +605,7 @@ class SolrORM(object):
         @return: the names of the missing Solr fields, empty if the schema is
             complete. Raises KeyError if entity_name is not a known entity.
         """
-        entity_class = config["entities"][entity_name.lower()]
+        entity_class = self.settings.entities[entity_name.lower()]
         if entity_class.__name__.lower() != entity_name.lower() or not hasattr(
             entity_class, "_solr_fields"
         ):
@@ -651,7 +654,7 @@ class SolrORM(object):
         """
 
         def get_field(field_name: str) -> str:
-            for entity_name in config["entities"].keys():
+            for entity_name in self.settings.entities.keys():
                 if field_name.startswith(entity_name):
                     return field_name
 
@@ -674,7 +677,7 @@ class SolrORM(object):
             mismatching field, empty if every field type matches.
             Raises KeyError if entity_name is not a known entity.
         """
-        entity_class = config["entities"][entity_name]
+        entity_class = self.settings.entities[entity_name]
         mismatches = []
         for field in entity_class._solr_fields.values():
             solr_field_name = f"{entity_name.lower()}_{field.name}"
@@ -750,7 +753,7 @@ class SolrORM(object):
             self.indexer_schema.create_field(
                 "type", "string", index=True, store=True, multivalued=False
             )
-        for solr_entity_class in config["entities"].values():
+        for solr_entity_class in self.settings.entities.values():
             logger.debug(solr_entity_class)
             # fields = self.get_fields_for_class(solr_entity_class)
             if not hasattr(solr_entity_class, "_solr_fields"):
@@ -787,7 +790,7 @@ class SolrORM(object):
     def _create_or_update_fields_for_class(self, solr_entity_class, update):
         fields = solr_entity_class._solr_fields
         entity_name = solr_entity_class.__name__.lower()
-        solr_query_fields = config.get("SOLR_QUERY_TEXT_FIELD", {}).get(entity_name)
+        solr_query_fields = self.settings.query_text_field.get(entity_name)
         if not solr_query_fields:
             solr_query_fields = self.DEFAULT_QUERY_FIELDS
 
@@ -1094,7 +1097,7 @@ class SolrORM(object):
         params = {"commit": "true", "indent": "true"}
 
         suggesters = []
-        for entity_name in config.get("entities").keys():
+        for entity_name in self.settings.entities.keys():
             suggesters.append(
                 {
                     "name": f"suggest_{entity_name}",

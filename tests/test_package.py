@@ -27,6 +27,7 @@ PUBLIC_NAMES = [
     "Facet",
     "FacetRange",
     "Range",
+    "Settings",
     "SolrAutomaticQuery",
     "SolrBinaryField",
     "SolrBooleanField",
@@ -45,8 +46,6 @@ PUBLIC_NAMES = [
     "SolrQueryException",
     "SolrSchemaAdmin",
     "SolrTextField",
-    "config",
-    "configure",
 ]
 
 
