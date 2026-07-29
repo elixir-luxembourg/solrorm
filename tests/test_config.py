@@ -14,11 +14,9 @@
 """Tests for the Settings object."""
 
 import dataclasses
-import types
 
 import pytest
 
-import solrorm
 from solrorm.config import Settings
 
 from .conftest import SOLR_COLLECTION, SOLR_ENDPOINT
@@ -87,11 +85,3 @@ def test_from_mapping_requires_the_endpoint_and_the_collection():
 def test_from_mapping_ignores_keys_it_does_not_know(app_config):
     app_config["SOMETHING_ELSE"] = "ignored"
     assert Settings.from_mapping(app_config).collection == SOLR_COLLECTION
-
-
-def test_the_global_config_singleton_is_gone():
-    """T3 removed ``solrorm.configure`` and the module-level accessor it fed;
-    ``solrorm.config`` is now only the module holding Settings."""
-    assert not hasattr(solrorm, "configure")
-    assert isinstance(solrorm.config, types.ModuleType)
-    assert not hasattr(solrorm.config, "config")

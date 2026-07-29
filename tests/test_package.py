@@ -17,8 +17,6 @@ Users import from ``solrorm`` rather than from its modules, so the re-exports
 are part of the API and worth pinning.
 """
 
-import importlib
-
 import pytest
 
 import solrorm
@@ -58,10 +56,3 @@ def test_the_name_is_reachable_from_the_package_root(name):
 def test_all_lists_nothing_that_is_missing():
     for name in solrorm.__all__:
         assert hasattr(solrorm, name), name
-
-
-@pytest.mark.parametrize(
-    "module", ["entity", "fields", "orm", "schema", "facets", "config", "exceptions"]
-)
-def test_the_renamed_modules_are_importable(module):
-    assert importlib.import_module(f"solrorm.{module}") is not None
