@@ -34,6 +34,10 @@ testing = ["pytest>=8"]
 [tool.setuptools.packages.find]
 include = ["solrorm*"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"

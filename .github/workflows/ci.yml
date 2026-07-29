@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the project
+        run: uv sync --all-groups --python ${{ matrix.python-version }}
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test
+        run: uv run pytest
+
+      # Not yet a gate: the pre-existing code has 44 ty diagnostics, several of
+      # them the very bugs T4-T6 of RELEASE_PLAN.md fix. T11 clears the backlog
+      # and drops continue-on-error so regressions start failing the build.
+      - name: Type check (informational)
+        run: uv run ty check
+        continue-on-error: true
