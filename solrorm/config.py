@@ -1,4 +1,3 @@
-# coding=utf-8
 #  Copyright 2020 University of Luxembourg
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,8 +27,9 @@ Settings are read *eagerly*: the ``entities`` registry must be populated before
 ``SolrORM`` is constructed.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Type
+from typing import Any
 
 __author__ = "Valentin Grouès"
 
@@ -53,12 +53,12 @@ class Settings:
 
     endpoint: str
     collection: str
-    entities: Dict[str, Type[Any]] = field(default_factory=dict)
+    entities: dict[str, type[Any]] = field(default_factory=dict)
     fuzzy_search_level: int = 4
     use_cursor_pagination: bool = False
-    boost: Dict[str, str] = field(default_factory=dict)
-    default_sort: Dict[str, str] = field(default_factory=dict)
-    query_text_field: Dict[str, List[str]] = field(default_factory=dict)
+    boost: dict[str, str] = field(default_factory=dict)
+    default_sort: dict[str, str] = field(default_factory=dict)
+    query_text_field: dict[str, list[str]] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, mapping: Mapping[str, Any]) -> "Settings":
@@ -71,7 +71,7 @@ class Settings:
             default.
         @return: the corresponding Settings instance
         """
-        values: Dict[str, Any] = {
+        values: dict[str, Any] = {
             "endpoint": mapping["SOLR_ENDPOINT"],
             "collection": mapping["SOLR_COLLECTION"],
         }

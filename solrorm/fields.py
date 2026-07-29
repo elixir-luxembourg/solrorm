@@ -20,7 +20,7 @@ Module containing the SolrField class and subclasses for different fields type
 """
 
 import logging
-from typing import Any, Optional, overload
+from typing import Any, overload
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class SolrField:
     def __init__(
         self,
         name: str,
-        attribute_name: Optional[str] = None,
+        attribute_name: str | None = None,
         field_type: str = "string",
         indexed: bool = True,
         stored: bool = True,
@@ -65,10 +65,10 @@ class SolrField:
         self._storage_name = name
 
     @overload
-    def __get__(self, instance: None, owner: Optional[type] = None) -> "SolrField": ...
+    def __get__(self, instance: None, owner: type | None = None) -> "SolrField": ...
 
     @overload
-    def __get__(self, instance: object, owner: Optional[type] = None) -> Any: ...
+    def __get__(self, instance: object, owner: type | None = None) -> Any: ...
 
     def __get__(self, instance, owner=None):
         if instance is None:
@@ -87,7 +87,7 @@ class SolrCaseInsensitiveStringField(SolrField):
     def __init__(
         self,
         name: str,
-        attribute_name: Optional[str] = None,
+        attribute_name: str | None = None,
         indexed: bool = True,
         stored: bool = True,
         multivalued: bool = False,
@@ -105,7 +105,7 @@ class SolrDateTimeField(SolrField):
     def __init__(
         self,
         name: str,
-        attribute_name: Optional[str] = None,
+        attribute_name: str | None = None,
         indexed: bool = True,
         stored: bool = True,
         multivalued: bool = False,
@@ -128,7 +128,7 @@ class SolrLongField(SolrField):
     def __init__(
         self,
         name: str,
-        attribute_name: Optional[str] = None,
+        attribute_name: str | None = None,
         indexed: bool = True,
         stored: bool = True,
         multivalued: bool = False,
@@ -151,7 +151,7 @@ class SolrFloatField(SolrField):
     def __init__(
         self,
         name: str,
-        attribute_name: Optional[str] = None,
+        attribute_name: str | None = None,
         indexed: bool = True,
         stored: bool = True,
         multivalued: bool = False,
@@ -174,7 +174,7 @@ class SolrBinaryField(SolrField):
     def __init__(
         self,
         name: str,
-        attribute_name: Optional[str] = None,
+        attribute_name: str | None = None,
         indexed: bool = False,
         stored: bool = True,
         multivalued: bool = False,
@@ -190,7 +190,7 @@ class SolrIntField(SolrField):
     def __init__(
         self,
         name: str,
-        attribute_name: Optional[str] = None,
+        attribute_name: str | None = None,
         indexed: bool = True,
         stored: bool = True,
         multivalued: bool = False,
@@ -211,7 +211,7 @@ class SolrTextField(SolrField):
     def __init__(
         self,
         name: str,
-        attribute_name: Optional[str] = None,
+        attribute_name: str | None = None,
         indexed: bool = True,
         stored: bool = True,
         multivalued: bool = False,
@@ -227,11 +227,11 @@ class SolrJsonField(SolrField):
     def __init__(
         self,
         name: str,
-        attribute_name: Optional[str] = None,
+        attribute_name: str | None = None,
         indexed: bool = True,
         stored: bool = True,
         multivalued: bool = False,
-        model: Optional[Any] = None,
+        model: Any | None = None,
     ) -> None:
         self.model = model
         super().__init__(name, attribute_name, "text_en", indexed, stored, multivalued)
@@ -245,7 +245,7 @@ class SolrBooleanField(SolrField):
     def __init__(
         self,
         name: str,
-        attribute_name: Optional[str] = None,
+        attribute_name: str | None = None,
         indexed: bool = True,
         stored: bool = True,
         multivalued: bool = False,
@@ -262,9 +262,9 @@ class SolrForeignKeyField(SolrField):
         self,
         name: str,
         entity_name: str,
-        attribute_name: Optional[str] = None,
+        attribute_name: str | None = None,
         multivalued: bool = False,
-        reversed_by: Optional[str] = None,
+        reversed_by: str | None = None,
         reversed_multiple: bool = False,
     ) -> None:
         self.linked_entity_name = entity_name

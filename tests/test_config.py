@@ -35,7 +35,9 @@ def test_the_defaults_cover_every_optional_setting():
 def test_settings_are_frozen():
     settings = Settings(endpoint=SOLR_ENDPOINT, collection=SOLR_COLLECTION)
     with pytest.raises(dataclasses.FrozenInstanceError):
-        setattr(settings, "collection", "other")
+        # setattr, not a plain assignment: the point of the test is that this
+        # raises, which a type checker reports as an error of its own
+        setattr(settings, "collection", "other")  # noqa: B010
 
 
 def test_each_instance_gets_its_own_mutable_defaults():

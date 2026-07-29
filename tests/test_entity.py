@@ -122,7 +122,7 @@ def test_delete_passes_the_unprefixed_id(solr_orm, indexer):
 def test_an_unknown_attribute_still_raises(solr_orm):
     """__getattr__ resolves foreign keys, so it must not swallow typos."""
     with pytest.raises(AttributeError, match="no attribute 'nonexistent'"):
-        Widget().nonexistent
+        _ = Widget().nonexistent
 
 
 def test_from_json_round_trips_a_datetime(solr_orm):

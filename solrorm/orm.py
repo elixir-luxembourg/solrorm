@@ -1,5 +1,3 @@
-# coding=utf-8
-
 #  Copyright 2020 University of Luxembourg
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,18 +26,11 @@ import base64
 import json
 import logging
 import re
-
+from collections.abc import Iterator
 from datetime import date, datetime, timezone
 from typing import (
     Any,
-    Dict,
     Generic,
-    Iterator,
-    List,
-    Optional,
-    Tuple,
-    Set,
-    Type,
     TypeVar,
     cast,
 )
@@ -50,18 +41,18 @@ from pysolr import Solr
 from pysolr import SolrError as PysolrError
 from requests import HTTPError
 
-from .facets import Facet, FacetRange
+from .config import Settings
 from .entity import SolrEntity, _parse_solr_datetime, _parse_solr_json
+from .exceptions import SolrQueryException
+from .facets import Facet, FacetRange
 from .fields import (
+    SolrBinaryField,
     SolrDateTimeField,
     SolrField,
     SolrForeignKeyField,
     SolrJsonField,
-    SolrBinaryField,
 )
 from .schema import SolrSchemaAdmin
-from .config import Settings
-from .exceptions import SolrQueryException
 
 
 def fuzzy_search_suffix(settings: Settings) -> str:
@@ -70,7 +61,7 @@ def fuzzy_search_suffix(settings: Settings) -> str:
     @param settings: the configuration of the ORM issuing the query
     @return: the solr fuzziness suffix, e.g. C{~4}
     """
-    return "~{}".format(settings.fuzzy_search_level)
+    return f"~{settings.fuzzy_search_level}"
 
 
 # The Lucene query-syntax special characters, plus whitespace: any of these in a
@@ -115,7 +106,7 @@ class SolrResults(pysolr.Results):
     @ivar has_more: whether solr reported at least a full page of results
     """
 
-    entities: List[Any]
+    entities: list[Any]
     has_more: bool
 
 
@@ -129,17 +120,17 @@ class SolrQuery(Generic[E]):
     """
 
     # The sort options that will be offered on the search page
-    SORT_OPTIONS: List[str] = []
+    SORT_OPTIONS: list[str] = []
     # The sort options labels that will be offered on the search page
-    SORT_LABELS: List[str] = []
+    SORT_LABELS: list[str] = []
     # default sort option
     DEFAULT_SORT = ""
     # default sort order
     DEFAULT_SORT_ORDER = "asc"
     # allows giving more weight to some fields than others for default search
-    BOOST: Optional[str] = None
+    BOOST: str | None = None
 
-    def __init__(self, class_object: Type[E], solr_orm: "SolrORM") -> None:
+    def __init__(self, class_object: type[E], solr_orm: "SolrORM") -> None:
         """
         Initialize a SolrQuery instance setting the SolrEntity class and the SolrORM instance
         @param class_object: SolrEntity class indicating which entity we are searching or retrieving
@@ -191,12 +182,8 @@ class SolrQuery(Generic[E]):
         """
         params = {
             "fq": [
-                'type:"{}"'.format(escape_solr_value(source_entity_type)),
-                '{}_{}:"{}"'.format(
-                    escape_solr_value(source_entity_type),
-                    escape_solr_value(field_name),
-                    escape_solr_value(target_entity_id),
-                ),
+                f'type:"{escape_solr_value(source_entity_type)}"',
+                f'{escape_solr_value(source_entity_type)}_{escape_solr_value(field_name)}:"{escape_solr_value(target_entity_id)}"',
             ]
         }
         results = cast(SolrResults, self.solr_orm.indexer.search("*:*", **params))
@@ -216,17 +203,17 @@ class SolrQuery(Generic[E]):
     def search(
         self,
         query: str,
-        rows: Optional[int] = 50,
+        rows: int | None = 50,
         start: int = 0,
-        sort: Optional[str] = DEFAULT_SORT,
+        sort: str | None = DEFAULT_SORT,
         sort_order: str = "desc",
-        fq: Optional[List[str]] = None,
-        facets: Optional[List[Facet]] = None,
+        fq: list[str] | None = None,
+        facets: list[Facet] | None = None,
         fuzzy: bool = False,
         edismax: bool = False,
-        bq: Optional[str] = None,
-        sorts: Optional[List[str]] = None,
-        cursor: Optional[str] = None,
+        bq: str | None = None,
+        sorts: list[str] | None = None,
+        cursor: str | None = None,
     ) -> SolrResults:
         """
         Execute a solr search
@@ -270,7 +257,7 @@ class SolrQuery(Generic[E]):
 
         if fq is None:
             fq = []
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "sort": sort_with_order,
             "defType": "edismax",
             "qf": self.BOOST,
@@ -288,12 +275,8 @@ class SolrQuery(Generic[E]):
             else:
                 entity_name = escape_solr_value(self.entity_name)
                 if fuzzy:
-                    fuzzy_terms = "OR {}_textfuzzy_:{}{}".format(
-                        entity_name,
-                        query,
-                        fuzzy_search_suffix(self.solr_orm.settings),
-                    )
-                    query = "({}_text_:'{}' {})".format(entity_name, query, fuzzy_terms)
+                    fuzzy_terms = f"OR {entity_name}_textfuzzy_:{query}{fuzzy_search_suffix(self.solr_orm.settings)}"
+                    query = f"({entity_name}_text_:'{query}' {fuzzy_terms})"
                 else:
                     if edismax:
                         pattern = query
@@ -321,41 +304,29 @@ class SolrQuery(Generic[E]):
             for facet in facets:
                 if isinstance(facet, FacetRange):
                     params[
-                        "f.{}_{}.facet.range.start".format(
-                            self.entity_name, facet.field_name
-                        )
+                        f"f.{self.entity_name}_{facet.field_name}.facet.range.start"
                     ] = facet.range.start
                     params[
-                        "f.{}_{}.facet.range.end".format(
-                            self.entity_name, facet.field_name
-                        )
+                        f"f.{self.entity_name}_{facet.field_name}.facet.range.end"
                     ] = facet.range.end
                     params[
-                        "f.{}_{}.facet.range.gap".format(
-                            self.entity_name, facet.field_name
-                        )
+                        f"f.{self.entity_name}_{facet.field_name}.facet.range.gap"
                     ] = facet.range.gap
                     params[
-                        "f.{}_{}.facet.range.other".format(
-                            self.entity_name, facet.field_name
-                        )
+                        f"f.{self.entity_name}_{facet.field_name}.facet.range.other"
                     ] = facet.range.other
                     params["facet.range"].append(
                         f"{self.entity_name}_{facet.field_name}"
                     )
                 else:
                     params["facet.field"].append(
-                        "{}_{}".format(self.entity_name, facet.field_name)
+                        f"{self.entity_name}_{facet.field_name}"
                     )
                 # the selected values are caller data, so they are escaped and
                 # quoted the same way for both facet kinds
                 for value in facet.values:
                     fq.append(
-                        '{}_{}:"{}"'.format(
-                            escape_solr_value(self.entity_name),
-                            escape_solr_value(facet.field_name),
-                            escape_solr_value(value),
-                        )
+                        f'{escape_solr_value(self.entity_name)}_{escape_solr_value(facet.field_name)}:"{escape_solr_value(value)}"'
                     )
         try:
             results = cast(SolrResults, self.solr_orm.indexer.search(q, **params))
@@ -377,10 +348,10 @@ class SolrQuery(Generic[E]):
                     new_facets_fields[field_name[start_index:]] = facet_value
                 results.facets["facet_fields"] = new_facets_fields
         except PysolrError as e:
-            raise SolrQueryException(e)
+            raise SolrQueryException(e) from e
         return results
 
-    def get_default_sort(self, query: str) -> Tuple[Optional[str], Optional[str]]:
+    def get_default_sort(self, query: str) -> tuple[str | None, str | None]:
         """
         For a given query, return the default
         sort attribute and order as a tuple.
@@ -397,7 +368,7 @@ class SolrQuery(Generic[E]):
         else:
             return None, None
 
-    def get_facets(self, facet_list: List[Tuple[str, str]]) -> Dict[str, Facet]:
+    def get_facets(self, facet_list: list[tuple[str, str]]) -> dict[str, Facet]:
         """
         Build Facet instances from a list of attributes and facet labels
         @param facet_list: a list containing tuples with field name and facet label
@@ -413,7 +384,7 @@ class SolrQuery(Generic[E]):
                     facets[attribute_name] = Facet(solr_field.name, label)
         return facets
 
-    def get_sort_options(self) -> Tuple[List[str], List[str]]:
+    def get_sort_options(self) -> tuple[list[str], list[str]]:
         """
         Returns a tuple where the first element is the list of sorting options and the second element
         is a list of the corresponding labels
@@ -426,18 +397,18 @@ class SolrQuery(Generic[E]):
         ]
         return options_with_prefix, getattr(self, "SORT_LABELS", [])
 
-    def get(self, entity_id: str) -> Optional[E]:
+    def get(self, entity_id: str) -> E | None:
         """
         Retrieve from solr and build a SolrEntity instance for a given entity id
         @param entity_id: id of the entity to retrieve from solr
         @return: a self.class_object instance or None if not found
         """
         if getattr(self.class_object, "ADD_PREFIX_ID", True):
-            entity_id_query = "{}_{}".format(self.entity_name, entity_id)
+            entity_id_query = f"{self.entity_name}_{entity_id}"
         else:
             entity_id_query = entity_id
         results = self.solr_orm.indexer.search(
-            q='id:"{}"'.format(escape_solr_value(entity_id_query)), rows=1
+            q=f'id:"{escape_solr_value(entity_id_query)}"', rows=1
         )
         if results.hits == 0:
             return None
@@ -445,7 +416,7 @@ class SolrQuery(Generic[E]):
         new_instance = self._build_instance(doc)
         return new_instance
 
-    def get_by_slug(self, slug: str) -> Optional[E]:
+    def get_by_slug(self, slug: str) -> E | None:
         """
         Retrieve from solr and build a SolrEntity instance for a given entity slug
         @param slug: slug of the entity to retrieve from solr
@@ -453,9 +424,7 @@ class SolrQuery(Generic[E]):
         """
 
         results = self.solr_orm.indexer.search(
-            q='{}_slugs:"{}"'.format(
-                escape_solr_value(self.entity_name), escape_solr_value(slug)
-            ),
+            q=f'{escape_solr_value(self.entity_name)}_slugs:"{escape_solr_value(slug)}"',
             rows=1,
         )
         if results.hits == 0:
@@ -464,7 +433,7 @@ class SolrQuery(Generic[E]):
         new_instance = self._build_instance(doc)
         return new_instance
 
-    def _build_instance(self, doc: Dict[str, Any]) -> E:
+    def _build_instance(self, doc: dict[str, Any]) -> E:
         new_instance = self.class_object()
         for attribute_name, field in self.class_object._solr_fields.items():
             solr_value = doc.get(self.entity_name + "_" + field.name, None)
@@ -480,7 +449,7 @@ class SolrQuery(Generic[E]):
         if doc_id and new_instance.ADD_PREFIX_ID:
             start_index = len(self.entity_name) + 1
             doc_id = doc_id[start_index:]
-        setattr(new_instance, "id", doc_id)
+        new_instance.id = doc_id
         return new_instance
 
     def count(self) -> int:
@@ -536,7 +505,7 @@ class SolrQuery(Generic[E]):
             for result in results:
                 yield self._build_instance(result)
 
-    def all_ids(self) -> List[str]:
+    def all_ids(self) -> list[str]:
         """
         Retrieve from solr all the entity ids of the underlying SolrEntity as defined by self.class_object
 
@@ -556,7 +525,7 @@ class SolrQuery(Generic[E]):
 
 
 class SolrAutomaticQuery(SolrQuery[E]):
-    def __init__(self, class_object: Type[E], solr_orm: "SolrORM") -> None:
+    def __init__(self, class_object: type[E], solr_orm: "SolrORM") -> None:
         """
         Initialize a SolrQuery instance setting the SolrEntity class and the SolrORM instance
         @param class_object: SolrEntity class indicating which entity we are searching or retrieving
@@ -597,7 +566,7 @@ def _encode_solr_json_value(value):
 _SOLR_JSON_ENCODER = json.JSONEncoder(default=_encode_solr_json_value)
 
 
-class SolrORM(object):
+class SolrORM:
     """
     Class abstracting access to solr api to create, update and delete solr fields
     """
@@ -642,10 +611,8 @@ class SolrORM(object):
         collection = settings.collection
         self.url = url
         self.collection = collection
-        self.indexer = Solr("{}/{}".format(url, collection), encoder=_SOLR_JSON_ENCODER)
-        self.indexer_schema = SolrSchemaAdmin(
-            "{}/{}/schema".format(self.url, collection)
-        )
+        self.indexer = Solr(f"{url}/{collection}", encoder=_SOLR_JSON_ENCODER)
+        self.indexer_schema = SolrSchemaAdmin(f"{self.url}/{collection}/schema")
         logger.info(
             "Initializing SolrORM with solr url %s and collection %s", url, collection
         )
@@ -681,7 +648,7 @@ class SolrORM(object):
             else:
                 entity_class.query = SolrQuery(entity_class, self)
 
-    def missing_fields(self, entity_name: str) -> List[str]:
+    def missing_fields(self, entity_name: str) -> list[str]:
         """
         Solr fields required by an entity but absent from the schema.
 
@@ -748,7 +715,7 @@ class SolrORM(object):
             for field_name in self.indexer_schema.fields()
         )
 
-    def mismatched_fields(self, entity_name: str) -> List[Tuple[str, str, str]]:
+    def mismatched_fields(self, entity_name: str) -> list[tuple[str, str, str]]:
         """
         Fields whose type in the solr schema differs from the entity's.
 
@@ -835,7 +802,7 @@ class SolrORM(object):
         except HTTPError as e:
             logger.debug(e)
 
-    def _collect_fields(self, solr_entity_class: Type[SolrEntity]) -> None:
+    def _collect_fields(self, solr_entity_class: type[SolrEntity]) -> None:
         """
         Make sure an entity class carries its collected solr fields.
 
@@ -871,8 +838,8 @@ class SolrORM(object):
         logger.debug("done")
 
     def get_fields_for_class(
-        self, solr_entity_class: Type[SolrEntity]
-    ) -> Dict[str, SolrField]:
+        self, solr_entity_class: type[SolrEntity]
+    ) -> dict[str, SolrField]:
         """
         For a specific SolrEntity subclass, returns a dict where keys are
         the attributes names and values are the SolrField instances
@@ -884,7 +851,7 @@ class SolrORM(object):
         return attributes
 
     def _find_fields(
-        self, solr_entity_class: type, attributes: Dict[str, SolrField]
+        self, solr_entity_class: type, attributes: dict[str, SolrField]
     ) -> None:
         """
         Collect the solr fields a class declares, inherited ones included.
@@ -903,7 +870,7 @@ class SolrORM(object):
             if isinstance(value, SolrField):
                 attributes[name] = value
 
-    def query_fields_for_entity(self, entity_name: str) -> List[str]:
+    def query_fields_for_entity(self, entity_name: str) -> list[str]:
         """
         The solr fields copied into an entity's catch-all search fields.
 
@@ -918,9 +885,9 @@ class SolrORM(object):
 
     def _create_or_update_fields_for_class(
         self,
-        solr_entity_class: Type[SolrEntity],
+        solr_entity_class: type[SolrEntity],
         update: bool,
-        existing_copy_fields: Optional[Set[Tuple[str, str]]] = None,
+        existing_copy_fields: set[tuple[str, str]] | None = None,
     ) -> None:
         """
         Create or update the solr fields of one entity.
@@ -1002,9 +969,7 @@ class SolrORM(object):
         """
         return self.indexer.add([entity_dict])
 
-    def delete(
-        self, entity_id: Optional[str] = None, query: Optional[str] = None
-    ) -> str:
+    def delete(self, entity_id: str | None = None, query: str | None = None) -> str:
         """
         Delete entities from the solr index
         Beware that this method doesn't trigger a commit
@@ -1047,7 +1012,7 @@ class SolrORM(object):
         ]
         self.indexer_schema.delete_copy_fields(directives)
 
-    def _delete_fields_for_class(self, entity_class: Type[SolrEntity]) -> None:
+    def _delete_fields_for_class(self, entity_class: type[SolrEntity]) -> None:
         fields = entity_class._solr_fields
         entity_name = entity_class.__name__.lower()
         self._delete_copy_fields_for_class(entity_name)

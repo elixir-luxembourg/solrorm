@@ -21,7 +21,6 @@ Module containing the SolrSchemaAdmin class
 """
 
 import logging
-from typing import Dict, List, Optional
 
 import requests
 from requests import HTTPError
@@ -105,7 +104,7 @@ class SolrSchemaAdmin:
         """
         return requests.get(f"{self.url}/fields/{field_name}").ok
 
-    def fields(self) -> List[str]:
+    def fields(self) -> list[str]:
         """
         The names of every field in the schema.
 
@@ -119,7 +118,7 @@ class SolrSchemaAdmin:
             return []
         return [field["name"] for field in ret.json().get("fields", [])]
 
-    def field_type(self, field_name: str) -> Optional[str]:
+    def field_type(self, field_name: str) -> str | None:
         """
         The type solr records for a field.
 
@@ -153,7 +152,7 @@ class SolrSchemaAdmin:
             ret, f"could not create field type {definition.get('name')}"
         )
 
-    def copy_fields(self) -> List[Dict[str, str]]:
+    def copy_fields(self) -> list[dict[str, str]]:
         """
         The copy field directives the schema currently holds.
 
@@ -189,7 +188,7 @@ class SolrSchemaAdmin:
         )
         return self._report(ret, f"could not copy {source} into {dest}")
 
-    def delete_copy_fields(self, directives: List[Dict[str, str]]) -> bool:
+    def delete_copy_fields(self, directives: list[dict[str, str]]) -> bool:
         """
         Delete copy field directives.
 
@@ -262,7 +261,7 @@ class SolrSchemaAdmin:
         )
         self._raise_for_refusal(ret, f"could not update field {field_name}")
 
-    def delete_fields(self, field_names: List[str]) -> bool:
+    def delete_fields(self, field_names: list[str]) -> bool:
         """
         Delete several fields in one request.
 

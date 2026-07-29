@@ -24,15 +24,15 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from .fields import (
+    SolrBinaryField,
     SolrDateTimeField,
     SolrField,
     SolrForeignKeyField,
     SolrIntField,
     SolrJsonField,
-    SolrBinaryField,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - imported for annotations only
@@ -64,7 +64,7 @@ def _parse_solr_datetime(value: Any) -> Any:
         return datetime.strptime(value, DATETIME_FORMAT_NO_MICRO)
 
 
-def _parse_solr_json(value: Any, model: Optional[Any] = None) -> Any:
+def _parse_solr_json(value: Any, model: Any | None = None) -> Any:
     """
     Parse a value read back from a solr field holding JSON.
 
@@ -97,17 +97,17 @@ class SolrEntity:
     # reverse foreign key references, as reverse name -> (source entity name,
     # field name, multiple). Each subclass gets its own dict -- see
     # __init_subclass__ -- and SolrORM.__init__ repopulates it during discovery.
-    reversed_field: ClassVar[Dict[str, Tuple[str, str, bool]]] = {}
+    reversed_field: ClassVar[dict[str, tuple[str, str, bool]]] = {}
     # the solr fields of the class, as attribute name -> field; collected by
     # SolrORM.__init__, so it does not exist before an ORM has been constructed
-    _solr_fields: ClassVar[Dict[str, SolrField]]
+    _solr_fields: ClassVar[dict[str, SolrField]]
     # the query object of the class, likewise attached by SolrORM.__init__
     query: ClassVar["SolrQuery"]
     # the SolrORM that discovered this class; set by SolrORM.__init__, and the
     # entity's only route to the settings it was configured with
     _solr_orm: Any = None
     ADD_PREFIX_ID = True
-    id: Optional[str]
+    id: str | None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """
@@ -119,7 +119,7 @@ class SolrEntity:
         super().__init_subclass__(**kwargs)
         cls.reversed_field = {}
 
-    def __init__(self, entity_id: Optional[str] = None) -> None:
+    def __init__(self, entity_id: str | None = None) -> None:
         """
         Initialize a SolrEntity instance setting its id or generating one if none is provided.
         Generated id is based on uuid.uuid1 method.
@@ -186,9 +186,7 @@ class SolrEntity:
                             results.append(linked_entity)
             return results
         raise AttributeError(
-            "'{}' object has no attribute '{}'".format(
-                self.__class__.__name__, attribute
-            )
+            f"'{self.__class__.__name__}' object has no attribute '{attribute}'"
         )
 
     def save(self, commit: bool = False, soft_commit: bool = False) -> str:
@@ -223,13 +221,13 @@ class SolrEntity:
             self._solr_orm.commit(soft_commit=soft_commit)
         return result_add
 
-    def to_dict(self, add_prefix: bool = True) -> Dict[str, Any]:
+    def to_dict(self, add_prefix: bool = True) -> dict[str, Any]:
         """
         Create a dict containing all attributes as key and the field values as value
         @param add_prefix: prefix each key with the entity name, as solr stores it
         @return: dict representation of the entity instance
         """
-        entity_dict: Dict[str, Any] = {}
+        entity_dict: dict[str, Any] = {}
         entity_type = self.__class__.__name__.lower()
         for attribute_name, field in self.__class__._solr_fields.items():
             attribute_value: Any = getattr(self, attribute_name, None)
@@ -259,7 +257,7 @@ class SolrEntity:
         entity_dict["id"] = self.id.replace(" ", "_")
         return entity_dict
 
-    def to_api_dict(self) -> Dict[str, Any]:
+    def to_api_dict(self) -> dict[str, Any]:
         """
         Similar to method to_dict but can be used to restrict the list of fields exported via api endpoints.
         @return: dict representation of the entity instance
@@ -276,7 +274,7 @@ class SolrEntity:
         return self._solr_orm.delete(self.id)
 
     @classmethod
-    def from_json(cls, entity_json: Dict[str, Any]) -> "SolrEntity":
+    def from_json(cls, entity_json: dict[str, Any]) -> "SolrEntity":
         """
         Create a SolrEntity instance based on a dict containing the fields names and values
         @param entity_json: source dict

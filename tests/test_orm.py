@@ -23,10 +23,10 @@ from solrorm.config import Settings
 from solrorm.entity import SolrEntity
 from solrorm.fields import SolrDateTimeField
 from solrorm.orm import (
+    _SOLR_JSON_ENCODER,
     SolrORM,
     SolrQuery,
     _encode_solr_json_value,
-    _SOLR_JSON_ENCODER,
     escape_solr_value,
 )
 

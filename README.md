@@ -362,7 +362,10 @@ uv run pytest
 uv run ty check
 ```
 
-All four are gates in CI, `ty` included — the codebase type-checks clean.
+All four are gates in CI, `ty` included — the codebase type-checks clean. Ruff
+runs `E`, `F`, `W`, `I` (import order), `B` (bugbear) and `UP`, so annotations
+are written in the modern form (`str | None`, `list[str]`) even though the
+package supports Python 3.10.
 
 The test suite needs no reachable Solr: `tests/conftest.py` fakes the indexer.
 

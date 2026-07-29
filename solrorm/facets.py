@@ -23,22 +23,21 @@ Module containing the facets class and related utility classes:
 """
 
 import logging
-
 import math
-
-from typing import Any, Generator, List, Optional, Tuple
+from collections.abc import Generator
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-class Range(object):
+class Range:
     """
     The Range class together with the FacetRange class allows specify intervals of values
     to be displayed as facets rather that each value separately
     """
 
     def __init__(
-        self, start: float, end: float, gap: float, other: Optional[str] = None
+        self, start: float, end: float, gap: float, other: str | None = None
     ) -> None:
         """
         Initialize a Range instance with start, end , gap and other parameters
@@ -60,7 +59,7 @@ class Range(object):
         self.end = end
         self.start = start
 
-    def iter_intervals(self) -> Generator[Tuple[float, float], None, None]:
+    def iter_intervals(self) -> Generator[tuple[float, float], None, None]:
         """
         Generator yielding each interval of this range instance as a tuple (interval_start, interval_end)
         """
@@ -71,7 +70,7 @@ class Range(object):
             yield interval_start, interval_end
 
 
-class Facet(object):
+class Facet:
     """
     Facet object to configure the solr facets
     see https://lucene.apache.org/solr/guide/8_4/faceting.html
@@ -80,8 +79,8 @@ class Facet(object):
     def __init__(
         self,
         field_name: str,
-        label: Optional[str] = None,
-        default_values: Optional[List[Any]] = None,
+        label: str | None = None,
+        default_values: list[Any] | None = None,
     ) -> None:
         """
         Initialize a Facet instance setting the field name, the label and default values
@@ -92,12 +91,12 @@ class Facet(object):
         self.using_default = False
         self.label = label
         self.field_name = field_name
-        self.values: List[Any] = []
+        self.values: list[Any] = []
         # only a FacetRange carries one; see the subclass
-        self.range: Optional[Range] = None
+        self.range: Range | None = None
         self.default_values = default_values or []
 
-    def set_values(self, values: List[Any]) -> None:
+    def set_values(self, values: list[Any]) -> None:
         self.values = values
         self.using_default = False
         if values == self.default_values:

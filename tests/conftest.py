@@ -27,7 +27,6 @@ import pytest
 import requests
 
 from solrorm.config import Settings
-from solrorm.orm import SolrORM
 from solrorm.entity import SolrEntity
 from solrorm.fields import (
     SolrBinaryField,
@@ -37,6 +36,7 @@ from solrorm.fields import (
     SolrIntField,
     SolrJsonField,
 )
+from solrorm.orm import SolrORM
 
 # deliberately unroutable: a test that slips past the fake must fail, not hang
 SOLR_ENDPOINT = "http://solr.invalid:8983/solr"
