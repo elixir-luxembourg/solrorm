@@ -72,6 +72,37 @@ registry must be complete before `SolrORM(...)` runs.
 | `query_text_field` | `SOLR_QUERY_TEXT_FIELD` | `dict[str, list[str]]` — per entity, the fields copied into `_text_` | `{}` |
 
 `Settings` is a frozen dataclass: build a new one rather than mutating it.
+`entities` and `query_text_field` are copied out of the mapping, so the library
+never mutates your configuration and never sees a later edit to it.
+
+### The query text field table
+
+`query_text_field` maps an entity name to the fields whose contents
+`create_fields()` copies into that entity's `_text_`, `_textfuzzy_` and
+`_autocomplete_text_` catch-alls — the fields a free-text `search()` matches
+against. It is plain, explicit configuration: an entity missing from the table
+falls back to `SolrORM.DEFAULT_QUERY_FIELDS`, i.e. `["title"]`, and each entity
+is resolved on its own, so naming one entity does not affect the others.
+
+```python
+Settings(
+    endpoint="http://localhost:8983/solr",
+    collection="mycollection",
+    entities={"dataset": Dataset, "project": Project},
+    query_text_field={
+        # searching a dataset also matches its keywords and its abstract
+        "dataset": ["title", "keywords", "abstract"],
+        # "project" is absent: it keeps ["title"]
+    },
+)
+```
+
+Field names are relative to the entity and get its prefix (`dataset_keywords`);
+the one exception is `"id"`, which is the collection-wide field and is copied
+unprefixed. To index a related entity's denormalised content, list the field that
+holds it — that is all the removed `SOLR_QUERY_SEARCH_EXTENDED` /
+`SOLR_QUERY_SEARCH_EXTENDED_2_WAY_INDEX` flags ever did, minus their hardcoded
+`dataset`/`project`/`study` entity names.
 
 ## Usage
 

@@ -21,12 +21,9 @@ Module containing the SolrSchemaAdmin class
 """
 
 import logging
-from typing import Any, Dict, List
 
 import requests
 from requests import HTTPError
-
-from .config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -58,36 +55,11 @@ class SolrSchemaAdmin:
     Create and delete fields
     """
 
-    def __init__(self, url: str, settings: Settings):
+    def __init__(self, url: str):
         """
         @param url: url of the schema api of the collection to administer
-        @param settings: the configuration the owning SolrORM was built with
         """
         self.url = url
-        self.settings = settings
-        self.solr_query_fields: Dict[str, List[str]] = settings.query_text_field or {
-            "dataset": ["title"],
-            "project": ["title"],
-            "study": ["title"],
-        }
-        # Any, because the transitional block below reaches for entity names a
-        # given host may never have declared -- the crash T9 of RELEASE_PLAN.md
-        # fixes, kept here so that this commit changes no behaviour
-        fields: Any = self.solr_query_fields
-        if settings.query_search_extended:
-            if "datasets_metadata" not in fields.get("project"):
-                fields.get("project").extend(["datasets_metadata", "studies_metadata"])
-            if (
-                not settings.query_search_extended_2_way_index
-                and "datasets_metadata" not in fields.get("study")
-            ):
-                fields.get("study").append("datasets_metadata")
-            if (
-                settings.query_search_extended_2_way_index
-                and "projects_metadata" not in fields.get("study")
-            ):
-                fields.get("study").extend(["datasets_metadata", "projects_metadata"])
-                fields.get("dataset").extend(["studies_metadata", "projects_metadata"])
 
     def create_field(
         self,

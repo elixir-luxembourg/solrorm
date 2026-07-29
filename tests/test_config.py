@@ -69,6 +69,21 @@ def test_from_mapping_round_trips_every_key():
     assert settings.query_text_field == {"widget": ["title", "tags"]}
 
 
+def test_the_query_field_table_is_copied_not_aliased(app_config):
+    """The library must neither mutate the host's mapping nor be steered by a
+    later edit to it -- the lists inside it are copied as well as the dict."""
+    table = {"widget": ["title"]}
+    app_config["SOLR_QUERY_TEXT_FIELD"] = table
+    settings = Settings.from_mapping(app_config)
+
+    settings.query_text_field["widget"].append("tags")
+    settings.query_text_field["gadget"] = ["title"]
+    assert table == {"widget": ["title"]}
+
+    table["widget"].append("note")
+    assert settings.query_text_field["widget"] == ["title", "tags"]
+
+
 def test_from_mapping_leaves_absent_keys_at_their_default(app_config):
     settings = Settings.from_mapping(app_config)
     assert settings.fuzzy_search_level == 4

@@ -49,8 +49,6 @@ class Settings:
     @ivar query_text_field: per entity name, the fields copied into the
         C{_text_} catch-all; entities absent from the mapping fall back to
         C{SolrORM.DEFAULT_QUERY_FIELDS}
-    @ivar query_search_extended: legacy flag, removed by T9 of RELEASE_PLAN.md
-    @ivar query_search_extended_2_way_index: legacy flag, removed by T9
     """
 
     endpoint: str
@@ -61,10 +59,6 @@ class Settings:
     boost: Dict[str, str] = field(default_factory=dict)
     default_sort: Dict[str, str] = field(default_factory=dict)
     query_text_field: Dict[str, List[str]] = field(default_factory=dict)
-    # the two flags below bake one application's entity names into the library;
-    # they survive only until T9 replaces them with an explicit query_text_field
-    query_search_extended: bool = False
-    query_search_extended_2_way_index: bool = False
 
     @classmethod
     def from_mapping(cls, mapping: Mapping[str, Any]) -> "Settings":
@@ -88,11 +82,6 @@ class Settings:
             ("boost", "SOLR_BOOST"),
             ("default_sort", "SOLR_DEFAULT_SORT"),
             ("query_text_field", "SOLR_QUERY_TEXT_FIELD"),
-            ("query_search_extended", "SOLR_QUERY_SEARCH_EXTENDED"),
-            (
-                "query_search_extended_2_way_index",
-                "SOLR_QUERY_SEARCH_EXTENDED_2_WAY_INDEX",
-            ),
         ):
             if key in mapping:
                 values[name] = mapping[key]
@@ -100,4 +89,11 @@ class Settings:
             # copied, not aliased: the registry is read once, at construction,
             # so a host adding an entity later must not silently be obeyed
             values["entities"] = dict(values["entities"])
+        if "query_text_field" in values:
+            # the lists are copied too: the library must never mutate, nor be
+            # affected by later edits to, the mapping the host handed over
+            values["query_text_field"] = {
+                entity_name: list(fields)
+                for entity_name, fields in values["query_text_field"].items()
+            }
         return cls(**values)

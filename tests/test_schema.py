@@ -70,8 +70,8 @@ def posts(monkeypatch):
 
 
 @pytest.fixture
-def admin(settings):
-    return SolrSchemaAdmin(SCHEMA_URL, settings)
+def admin():
+    return SolrSchemaAdmin(SCHEMA_URL)
 
 
 def test_create_field_posts_the_add_field_directive(admin, posts):
@@ -146,52 +146,14 @@ def test_the_error_helper_falls_back_to_the_raw_body():
     assert _solr_error(FakeResponse(500, text="gateway exploded")) == "gateway exploded"
 
 
-def test_the_query_field_defaults_are_currently_hardcoded(admin):
+def test_the_schema_admin_holds_no_configuration(app_config):
     """
-    Pins the behaviour T9 of RELEASE_PLAN.md removes.
-
-    These three entity names belong to one consuming application, not to the
-    library. When T9 lands, this test should be replaced, not repaired.
-    """
-    assert admin.solr_query_fields == {
-        "dataset": ["title"],
-        "project": ["title"],
-        "study": ["title"],
-    }
-
-
-def test_extended_search_mutates_the_hosts_own_config(app_config):
-    """
-    Pins the side effect T9 removes.
-
-    ``solr_query_fields`` is never read by the library; the extended-search
-    feature works only because these appends mutate the list objects the host
-    passed in, which SolrORM later reads back through its settings.
-    """
-    app_config["SOLR_QUERY_TEXT_FIELD"] = {
-        "dataset": ["title"],
-        "project": ["title"],
-        "study": ["title"],
-    }
-    app_config["SOLR_QUERY_SEARCH_EXTENDED"] = True
-    SolrSchemaAdmin(SCHEMA_URL, Settings.from_mapping(app_config))
-    assert app_config["SOLR_QUERY_TEXT_FIELD"]["project"] == [
-        "title",
-        "datasets_metadata",
-        "studies_metadata",
-    ]
-    assert app_config["SOLR_QUERY_TEXT_FIELD"]["study"] == [
-        "title",
-        "datasets_metadata",
-    ]
-
-
-def test_extended_search_breaks_on_an_unknown_entity_set(app_config):
-    """
-    Pins the crash T9 fixes: a host whose entities are not dataset/project/study
-    cannot enable extended search at all.
+    The query-field table is the ORM's business, not the schema admin's: it
+    reads C{Settings.query_text_field} when it builds the copy fields. The admin
+    knows only the url, so constructing it cannot touch the host's mapping.
     """
     app_config["SOLR_QUERY_TEXT_FIELD"] = {"widget": ["title"]}
-    app_config["SOLR_QUERY_SEARCH_EXTENDED"] = True
-    with pytest.raises(TypeError):
-        SolrSchemaAdmin(SCHEMA_URL, Settings.from_mapping(app_config))
+    settings = Settings.from_mapping(app_config)
+    SolrSchemaAdmin(SCHEMA_URL)
+    assert app_config["SOLR_QUERY_TEXT_FIELD"] == {"widget": ["title"]}
+    assert settings.query_text_field == {"widget": ["title"]}

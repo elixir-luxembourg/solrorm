@@ -14,10 +14,12 @@
 """Tests for SolrORM itself: entity discovery, field collection and the
 document encoder."""
 
+import json
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from solrorm import orm as orm_module
 from solrorm.config import Settings
 from solrorm.orm import (
     SolrORM,
@@ -62,7 +64,7 @@ def test_the_orm_keeps_the_settings_it_was_built_with(settings):
     assert orm.settings is settings
     assert orm.url == settings.endpoint
     assert orm.collection == settings.collection
-    assert orm.indexer_schema.settings is settings
+    assert orm.indexer_schema.url.endswith(f"/{settings.collection}/schema")
 
 
 def test_two_orms_serve_two_collections_without_interfering(app_config):
@@ -145,3 +147,81 @@ def test_the_encoder_the_orm_hands_pysolr_serialises_datetimes():
 )
 def test_escaping_neutralises_every_lucene_special_character(value, expected):
     assert escape_solr_value(value) == expected
+
+
+class _SchemaPosts:
+    """Records the schema api posts create_fields issues."""
+
+    def __init__(self):
+        self.calls = []
+
+    def post(self, url, **kwargs):
+        self.calls.append(json.loads(kwargs.get("data") or json.dumps(kwargs["json"])))
+
+        class _Response:
+            status_code = 200
+            ok = True
+
+            def raise_for_status(self):
+                pass
+
+        return _Response()
+
+    def copy_field_sources(self, dest):
+        """The sources copied into C{dest}, in the order they were added."""
+        return [
+            directive["add-copy-field"]["source"]
+            for directive in self.calls
+            if "add-copy-field" in directive
+            and directive["add-copy-field"]["dest"] == dest
+        ]
+
+
+@pytest.fixture
+def schema_posts(monkeypatch):
+    captured = _SchemaPosts()
+    monkeypatch.setattr(orm_module.requests, "post", captured.post)
+    return captured
+
+
+def test_the_host_query_field_table_is_honoured_verbatim(app_config, schema_posts):
+    """No entity name and no field name is baked into the library: whatever the
+    host lists for an entity is what gets copied into its _text_ catch-all."""
+    app_config["SOLR_QUERY_TEXT_FIELD"] = {"widget": ["title", "tags", "id"]}
+    solr_orm = SolrORM(Settings.from_mapping(app_config))
+
+    solr_orm._create_or_update_fields_for_class(Widget, update=False)
+
+    # "id" is the one source not prefixed with the entity name
+    assert schema_posts.copy_field_sources("widget_text_") == [
+        "widget_title",
+        "widget_tags",
+        "id",
+    ]
+
+
+def test_an_entity_absent_from_the_table_falls_back_to_title(app_config, schema_posts):
+    """Per entity, not per table: a table naming only *some* entities leaves the
+    others on SolrORM.DEFAULT_QUERY_FIELDS rather than crashing or copying
+    another entity's fields."""
+    app_config["SOLR_QUERY_TEXT_FIELD"] = {"widget": ["title", "tags"]}
+    solr_orm = SolrORM(Settings.from_mapping(app_config))
+
+    solr_orm._create_or_update_fields_for_class(Gadget, update=False)
+
+    assert schema_posts.copy_field_sources("gadget_text_") == ["gadget_title"]
+
+
+def test_the_query_field_table_is_not_mutated_by_field_creation(
+    app_config, schema_posts
+):
+    """The old extended-search block worked by appending to the lists inside the
+    host's own config. Nothing in the library writes to the table any more."""
+    app_config["SOLR_QUERY_TEXT_FIELD"] = {"widget": ["title"]}
+    settings = Settings.from_mapping(app_config)
+    solr_orm = SolrORM(settings)
+
+    solr_orm._create_or_update_fields_for_class(Widget, update=False)
+
+    assert settings.query_text_field == {"widget": ["title"]}
+    assert app_config["SOLR_QUERY_TEXT_FIELD"] == {"widget": ["title"]}

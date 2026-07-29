@@ -564,7 +564,7 @@ class SolrORM(object):
         self.collection = collection
         self.indexer = Solr("{}/{}".format(url, collection), encoder=_SOLR_JSON_ENCODER)
         self.indexer_schema = SolrSchemaAdmin(
-            "{}/{}/schema".format(self.url, collection), settings
+            "{}/{}/schema".format(self.url, collection)
         )
         logger.info(
             "Initializing SolrORM with solr url %s and collection %s", url, collection
