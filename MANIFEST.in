@@ -1,0 +1,8 @@
+# Extra files for the sdist. The default template already covers pyproject.toml,
+# README.md, LICENSE and the package sources.
+include CHANGELOG.md
+include CONTRIBUTING.md
+recursive-include tests *.py
+
+# The pre-1.0 working plan is not part of the distribution.
+exclude RELEASE_PLAN.md

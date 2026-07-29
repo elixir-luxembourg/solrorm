@@ -17,6 +17,9 @@ Users import from ``solrorm`` rather than from its modules, so the re-exports
 are part of the API and worth pinning.
 """
 
+from importlib import metadata
+from pathlib import Path
+
 import pytest
 
 import solrorm
@@ -59,3 +62,13 @@ def test_the_name_is_reachable_from_the_package_root(name):
 def test_all_lists_nothing_that_is_missing():
     for name in solrorm.__all__:
         assert hasattr(solrorm, name), name
+
+
+def test_the_distribution_version_comes_from_the_package():
+    """`pyproject.toml` reads the version from `solrorm.__version__`, so the
+    installed distribution metadata and the attribute cannot drift apart."""
+    assert metadata.version("solrorm") == solrorm.__version__
+
+
+def test_the_package_ships_its_type_annotations():
+    assert (Path(solrorm.__file__).parent / "py.typed").is_file()

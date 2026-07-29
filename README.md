@@ -348,6 +348,9 @@ class Dataset(SolrEntity):
 | `solrorm.exceptions` | `SolrORMError`, `SolrQueryException` |
 | `solrorm.config` | `Settings` — the library's whole configuration surface |
 
+The package ships a `py.typed` marker, so consumers type-check against its
+annotations.
+
 Every public name above is re-exported from the `solrorm` package itself, so
 `from solrorm import SolrField` works and no code needs to depend on the module
 layout.
@@ -368,6 +371,13 @@ are written in the modern form (`str | None`, `list[str]`) even though the
 package supports Python 3.10.
 
 The test suite needs no reachable Solr: `tests/conftest.py` fakes the indexer.
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full workflow and the release
+steps, and [`CHANGELOG.md`](CHANGELOG.md) for what changed — including the
+migration notes for applications adopting this library.
+
+The version has a single source, `solrorm.__version__`; `pyproject.toml` reads
+it from there.
 
 ## License
 

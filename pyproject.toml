@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "solrorm"
-version = "0.1.0"
+dynamic = ["version"]
 authors = [{ name = "Valentin Grouès", email = "valentin.groues@uni.lu" }]
 description = "A lightweight Solr ORM: entity mapping, typed fields, faceting and query building over pysolr."
 readme = "README.md"
@@ -12,23 +12,37 @@ license = "Apache-2.0"
 requires-python = ">=3.10"
 keywords = ["solr", "orm", "pysolr", "search"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Natural Language :: English",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
 ]
 dependencies = [
     "pysolr>=3.11,<4",
     "requests>=2.32",
 ]
 
+[project.urls]
+Homepage = "https://github.com/elixir-luxembourg/solrorm"
+Repository = "https://github.com/elixir-luxembourg/solrorm"
+Issues = "https://github.com/elixir-luxembourg/solrorm/issues"
+Changelog = "https://github.com/elixir-luxembourg/solrorm/blob/main/CHANGELOG.md"
+
 [dependency-groups]
 dev = ["ruff", "ty"]
 testing = ["pytest>=8"]
 
+[tool.setuptools.dynamic]
+version = { attr = "solrorm.__version__" }
+
 [tool.setuptools.packages.find]
 include = ["solrorm*"]
+
+[tool.setuptools.package-data]
+solrorm = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
