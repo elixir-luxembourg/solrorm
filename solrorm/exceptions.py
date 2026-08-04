@@ -36,9 +36,9 @@ class SolrQueryException(SolrORMError):
 class SolrEntityNotFound(SolrORMError):
     """Raised when a lookup finds no entity.
 
-    The library itself never raises this: `SolrQuery.get` and
-    `SolrQuery.get_by_slug` return `None`. It is provided for hosts that
-    prefer an exception at their own lookup boundary.
+    Only `SolrQuery.get_or_raise` raises it: the plain lookups `SolrQuery.get`
+    and `SolrQuery.get_by_slug` return `None`, leaving hosts that treat an
+    absent entity as an expected outcome free to test for it.
     """
 
     pass

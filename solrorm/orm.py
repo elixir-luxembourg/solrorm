@@ -43,7 +43,7 @@ from requests import HTTPError
 
 from .config import Settings
 from .entity import SolrEntity, _parse_solr_datetime, _parse_solr_json
-from .exceptions import SolrQueryException
+from .exceptions import SolrEntityNotFound, SolrQueryException
 from .facets import Facet, FacetRange
 from .fields import (
     SolrBinaryField,
@@ -435,6 +435,23 @@ class SolrQuery(Generic[E]):
         doc = results.docs[0]
         new_instance = self._build_instance(doc)
         return new_instance
+
+    def get_or_raise(self, entity_id: str) -> E:
+        """
+        Retrieve an entity by id, refusing to return nothing.
+
+        The counterpart to L{get} for callers that treat an absent entity as an
+        error rather than as an expected outcome -- resolving a foreign key, for
+        instance, where a dangling reference means the data is inconsistent.
+
+        @param entity_id: id of the entity to retrieve from solr
+        @return: a self.class_object instance
+        @raise SolrEntityNotFound: if no entity carries that id
+        """
+        entity = self.get(entity_id)
+        if entity is None:
+            raise SolrEntityNotFound(f"no {self.entity_name} with id {entity_id!r}")
+        return entity
 
     def get_by_slug(self, slug: str) -> E | None:
         """

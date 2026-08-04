@@ -51,8 +51,8 @@ def test_our_error_does_not_share_pysolrs_name(solr_orm):
     assert not hasattr(solrorm, "SolrError")
 
 
-def test_a_missing_entity_is_the_hosts_to_signal(solr_orm, indexer):
-    """The library returns None; SolrEntityNotFound is there for the host."""
+def test_the_caller_chooses_whether_a_missing_entity_is_an_error(solr_orm, indexer):
+    """`get` returns None; `get_or_raise` is the raising counterpart."""
     assert Widget.query.get("absent") is None
     with pytest.raises(SolrEntityNotFound):
-        raise SolrEntityNotFound("absent")
+        Widget.query.get_or_raise("absent")

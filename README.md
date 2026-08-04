@@ -265,16 +265,17 @@ if dataset is None:
     abort(404)
 ```
 
-If you prefer an exception at your own lookup boundary, raise the
-`SolrEntityNotFound` the package provides (a `SolrORMError` subclass); the
-library itself never raises it:
+Where an absent entity means inconsistent data rather than an expected outcome —
+resolving a foreign key, say — use `get_or_raise()`, which raises
+`SolrEntityNotFound` (a `SolrORMError` subclass) naming the entity and the id:
 
 ```python
 from solrorm import SolrEntityNotFound
 
-dataset = Dataset.query.get(dataset_id)
-if dataset is None:
-    raise SolrEntityNotFound(dataset_id)
+try:
+    dataset = Dataset.query.get_or_raise(dataset_id)
+except SolrEntityNotFound:
+    logger.warning("dataset %s is referenced but not indexed", dataset_id)
 ```
 
 ### Escaping: what is a value and what is a query

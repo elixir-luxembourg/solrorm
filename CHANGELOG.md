@@ -4,7 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — unreleased
+## [0.2.0] — 2026-08-04
+
+### Added
+
+- `SolrQuery.get_or_raise(entity_id)` — the raising counterpart to `get`, for
+  callers that treat an absent entity as inconsistent data rather than as an
+  expected outcome. It is the only place the library raises
+  `SolrEntityNotFound`, which until now shipped for hosts to raise themselves;
+  `get` and `get_by_slug` still return `None`.
+
+## [0.1.0] — 2026-07-29
 
 First release.
 

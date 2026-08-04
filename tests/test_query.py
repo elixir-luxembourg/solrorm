@@ -17,6 +17,7 @@ response."""
 import pytest
 
 from solrorm.config import Settings
+from solrorm.exceptions import SolrEntityNotFound
 from solrorm.facets import Facet, FacetRange, Range
 from solrorm.orm import BATCH_SIZE, SolrAutomaticQuery, SolrORM
 
@@ -40,6 +41,18 @@ def test_get_strips_the_prefix_back_off_the_id(solr_orm, indexer):
     assert widget is not None
     assert widget.id == "w-1"
     assert widget.title == "a widget"
+
+
+def test_get_or_raise_returns_the_entity_when_it_is_there(solr_orm, indexer):
+    indexer.queue(solr_response([{"id": "widget_w-1", "widget_title": "a widget"}]))
+    widget = Widget.query.get_or_raise("w-1")
+    assert widget.id == "w-1"
+    assert widget.title == "a widget"
+
+
+def test_get_or_raise_names_the_entity_and_id_it_could_not_find(solr_orm, indexer):
+    with pytest.raises(SolrEntityNotFound, match="no widget with id 'absent'"):
+        Widget.query.get_or_raise("absent")
 
 
 def test_get_by_slug_queries_the_slugs_field(solr_orm, indexer):
