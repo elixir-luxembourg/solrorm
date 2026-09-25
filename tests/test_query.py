@@ -392,7 +392,9 @@ def test_get_facets_takes_the_default_values_from_the_caller(solr_orm):
 def test_solr_parameters_are_sent_as_given(solr_orm, indexer):
     """A caller can add request parameters the method does not build itself,
     such as a time limit for a search on user input."""
-    Widget.query.search(query="cancer", solr_parameters={"timeAllowed": 5000, "uf": "-*"})
+    Widget.query.search(
+        query="cancer", solr_parameters={"timeAllowed": 5000, "uf": "-*"}
+    )
     _q, params = indexer.last_search
     assert params["timeAllowed"] == 5000
     assert params["uf"] == "-*"
@@ -402,4 +404,6 @@ def test_solr_parameters_cannot_replace_a_built_parameter(solr_orm, indexer):
     """Overriding what search() builds (here the filter queries) would silently
     change its contract, so it is refused."""
     with pytest.raises(ValueError, match="'fq'"):
-        Widget.query.search(query="cancer", solr_parameters={"fq": ["widget_year:2000"]})
+        Widget.query.search(
+            query="cancer", solr_parameters={"fq": ["widget_year:2000"]}
+        )
