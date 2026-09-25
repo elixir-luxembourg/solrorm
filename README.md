@@ -302,6 +302,14 @@ from solrorm import escape_solr_value
 Dataset.query.search(query=f'dataset_title:"{escape_solr_value(user_input)}"')
 ```
 
+Other Solr request parameters go in `solr_parameters`, sent as given — for
+example a time limit on a search over user input. A parameter `search()` builds
+itself (`sort`, `fq`, `rows`, facets…) cannot be replaced this way:
+
+```python
+Dataset.query.search(query="cancer", solr_parameters={"timeAllowed": 5000})
+```
+
 ### Relationships
 
 `SolrForeignKeyField` stores the id of the linked entity, and reading the

@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-09-25
+
+### Added
+
+- `SolrQuery.search(..., solr_parameters={...})` — further Solr request
+  parameters sent as given, such as `timeAllowed` to cap the time a search on
+  user input may take. A parameter `search()` builds itself (`sort`, `fq`,
+  `rows`, facets…) cannot be replaced this way: it raises `ValueError`.
+
 ## [0.2.0] — 2026-08-04
 
 ### Added

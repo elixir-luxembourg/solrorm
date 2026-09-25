@@ -26,7 +26,7 @@ import base64
 import json
 import logging
 import re
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from datetime import date, datetime, timezone
 from typing import (
     Any,
@@ -218,6 +218,7 @@ class SolrQuery(Generic[E]):
         bq: str | None = None,
         sorts: list[str] | None = None,
         cursor: str | None = None,
+        solr_parameters: Mapping[str, Any] | None = None,
     ) -> SolrResults:
         """
         Execute a solr search
@@ -239,6 +240,10 @@ class SolrQuery(Generic[E]):
         @param sorts: list of field names to sort on, in order, taking
         precedence over C{sort}
         @param cursor: cursor mark for deep pagination
+        @param solr_parameters: further solr request parameters sent as given,
+        e.g. C{{"timeAllowed": 5000}}. A parameter this method builds itself
+        (sort, fq, rows, facets...) cannot be overridden this way: it raises
+        C{ValueError} rather than silently replacing it
         @return: the search results, carrying the built C{entities} and the
         C{has_more} flag
         """
@@ -345,6 +350,12 @@ class SolrQuery(Generic[E]):
                     # and escaped
                     for value in facet.values:
                         fq.append(f'{solr_field}:"{escape_solr_value(value)}"')
+        for name, value in (solr_parameters or {}).items():
+            if name in params:
+                raise ValueError(
+                    f"solr parameter {name!r} is built by search() and cannot be passed in solr_parameters"
+                )
+            params[name] = value
         try:
             results = cast(SolrResults, self.solr_orm.indexer.search(q, **params))
             entities = []
